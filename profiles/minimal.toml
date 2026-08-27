@@ -1,0 +1,20 @@
+# Official profile: Union control plane only.
+# Locked source revisions for the Union 0.4.0 release line.
+schema_version = 1
+require_clean_sources = true
+
+[distribution]
+name = "unionc"
+version = "0.4.0"
+source = "../.union-sources/union-rust"
+repository = "https://github.com/isarmg/union-rust.git"
+revision = "63af6330f3888c9418f61cd9e7265fc8b70db1bf"
+package = "unionc"
+binary = "unionc"
+base_features = []
+output = "../dist/minimal"
+
+[distribution.frontend]
+directory = "web"
+output = "dist"
+install = "share/union/web"

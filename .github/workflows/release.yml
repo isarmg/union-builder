@@ -8,8 +8,44 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  verify-release-ref:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require a version-matched tag from main
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != refs/tags/* ]]; then
+            echo "Manual validation build: no GitHub Release will be created."
+            exit 0
+          fi
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must be strict vMAJOR.MINOR.PATCH: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          package_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)"
+          if [[ "$GITHUB_REF_NAME" != "v$package_version" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match Cargo version $package_version" >&2
+            exit 1
+          fi
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          release_commit="$(git rev-parse "${GITHUB_SHA}^{commit}")"
+          if ! git merge-base --is-ancestor "$release_commit" refs/remotes/origin/main; then
+            echo "Release commit $release_commit is not part of main history." >&2
+            exit 1
+          fi
+
   verify:
+    needs: verify-release-ref
     uses: ./.github/workflows/ci.yml
 
   build:
@@ -38,6 +74,22 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install --yes musl-tools
       - run: cargo build --locked --release --target ${{ matrix.target }}
+      - name: Verify built CLI version
+        if: startsWith(github.ref, 'refs/tags/v') && runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          "target/${{ matrix.target }}/release/union-builder" --version \
+            | grep -Fx "union-builder ${GITHUB_REF_NAME#v}"
+      - name: Verify built CLI version on Windows
+        if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $actual = & "target/${{ matrix.target }}/release/union-builder.exe" --version
+          $expected = "union-builder " + $env:GITHUB_REF_NAME.Substring(1)
+          if ($actual -ne $expected) {
+            throw "unexpected Builder version: $actual"
+          }
       - name: Stage Unix binary
         if: runner.os != 'Windows'
         shell: bash
@@ -58,15 +110,23 @@ jobs:
           path: dist/${{ matrix.asset }}
           if-no-files-found: error
 
+  validate-full-distribution:
+    needs: verify
+    uses: ./.github/workflows/build-union.yml
+    with:
+      profile: full
+      artifact-name: union-full-validation
+
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [build, validate-full-distribution]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
+          pattern: union-builder-*
           path: dist
           merge-multiple: true
       - name: Generate checksums and publish
@@ -77,8 +137,10 @@ jobs:
         run: |
           set -euo pipefail
           cd dist
+          checksum_file="$RUNNER_TEMP/union-builder-SHA256SUMS"
           find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\0' \
-            | sort -z | xargs -0 sha256sum > SHA256SUMS
+            | sort -z | xargs -0 sha256sum > "$checksum_file"
+          mv "$checksum_file" SHA256SUMS
           sha256sum --check SHA256SUMS
           gh release create "$GITHUB_REF_NAME" ./* \
             --verify-tag --generate-notes --title "Union Builder ${GITHUB_REF_NAME#v}"
