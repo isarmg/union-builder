@@ -1,0 +1,61 @@
+schema_version = 1
+require_clean_sources = true
+
+[distribution]
+name = "unionc"
+version = "0.3.6"
+source = "../.union-sources/union-rust"
+repository = "https://github.com/isarmg/union-rust.git"
+revision = "e01197dc5c328cfd4f25f53c4b56ffd43ab08e97"
+package = "unionc"
+binary = "unionc"
+base_features = []
+output = "../dist/full-transition"
+
+[[module]]
+id = "sentinel-monitor"
+source = "../.union-sources/sentinel-monitor"
+repository = "https://github.com/isarmg/sentinel-monitor.git"
+revision = "80da18e80904d73c641a30351b8205d7ca1f9804"
+package = "sentinel-monitor"
+binary = "sentinel-monitor"
+union_feature = "module-sentinel-monitor"
+cargo_features = []
+
+[module.runtime]
+bind = "127.0.0.1:18101"
+gateway_path = "/modules/sentinel-monitor"
+liveness_path = "/health/live"
+readiness_path = "/health/ready"
+
+[[module]]
+id = "photo-backup"
+source = "../.union-sources/photo-backup"
+repository = "https://github.com/isarmg/photo-backup.git"
+revision = "f3ba27d3836d740def0861ae6476b7e9cb8dfd43"
+package = "photo-backup-server"
+binary = "photo-backup-server"
+union_feature = "module-photo-backup"
+cargo_features = []
+
+[module.runtime]
+bind = "127.0.0.1:18102"
+gateway_path = "/modules/photo-backup"
+liveness_path = "/health/live"
+readiness_path = "/health/ready"
+
+[[module]]
+id = "dufs"
+source = "../.union-sources/dufs-ram"
+repository = "https://github.com/isarmg/dufs-ram.git"
+revision = "58182187ba441874f26d69cf1c4cb0c0be8e890d"
+package = "dufs"
+binary = "dufs"
+union_feature = "module-dufs"
+cargo_features = []
+
+[module.runtime]
+bind = "127.0.0.1:18103"
+gateway_path = "/modules/dufs"
+liveness_path = "/__dufs__/health"
+readiness_path = "/__dufs__/ready"

@@ -47,6 +47,25 @@ dist/
 ```
 
 参见 [`union-build.example.toml`](union-build.example.toml)。
+[`profiles/full-transition.toml`](profiles/full-transition.toml) 固定当前可实际组装的
+Sentinel、Photo Backup 与 Dufs worker；Sunshine 和主机监控仍在 Union 进程内，因此该清单明确
+标为过渡配置。`modules = []` 的核心构建也受支持，构建器仍会强制使用
+`--no-default-features`，不会意外带入 Union 默认模块。
+
+## 在 GitHub Actions 中复用
+
+调用方仓库只需保留组合清单，编译与组装逻辑由本仓库的可复用 workflow 提供：
+
+```yaml
+jobs:
+  union:
+    uses: isarmg/union-builder/.github/workflows/build-union.yml@v0.2.0
+    with:
+      config: profiles/full-transition.toml
+```
+
+workflow 会 checkout 调用方清单与固定版本的构建器，执行同一个 CLI，并上传单一
+`union-distribution` artifact。模块仓库不再复制编译、打包或发布 YAML。
 
 ## 清单边界
 
@@ -67,4 +86,3 @@ cargo test --locked
 ```
 
 本仓库第一方代码和文档使用 [Apache License 2.0](LICENSE)。
-

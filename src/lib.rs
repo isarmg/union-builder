@@ -216,11 +216,6 @@ fn validate_config(config: &BuildConfig) -> Result<()> {
     if let Some(repository) = &config.distribution.repository {
         validate_repository(repository)?;
     }
-    ensure!(
-        !config.modules.is_empty(),
-        "at least one module must be selected"
-    );
-
     let mut ids = BTreeSet::new();
     let mut features = BTreeSet::new();
     let mut binds = BTreeSet::new();
@@ -574,6 +569,7 @@ pub fn build(config_path: &Path, options: BuildOptions) -> Result<BuildResult> {
         &checked.config.distribution.package,
         Some(&checked.config.distribution.binary),
         &plan.distribution.features,
+        true,
         &options,
     )?;
     for module in &checked.config.modules {
@@ -587,6 +583,7 @@ pub fn build(config_path: &Path, options: BuildOptions) -> Result<BuildResult> {
             &module.package,
             Some(&module.binary),
             &features,
+            !features.is_empty(),
             &options,
         )?;
     }
@@ -673,6 +670,7 @@ fn cargo_build(
     package: &str,
     binary: Option<&str>,
     features: &[&str],
+    no_default_features: bool,
     options: &BuildOptions,
 ) -> Result<()> {
     let mut command = Command::new("cargo");
@@ -692,8 +690,10 @@ fn cargo_build(
     if let Some(target) = &options.target {
         command.args(["--target", target]);
     }
-    if !features.is_empty() {
+    if no_default_features {
         command.arg("--no-default-features");
+    }
+    if !features.is_empty() {
         command.args(["--features", &features.join(",")]);
     }
     command.stdout(Stdio::inherit()).stderr(Stdio::inherit());
@@ -796,6 +796,13 @@ mod tests {
                 .to_string()
                 .contains("gateway_path")
         );
+    }
+
+    #[test]
+    fn a_core_only_distribution_is_valid() {
+        let mut config = sample_config();
+        config.modules.clear();
+        validate_config(&config).unwrap();
     }
 
     fn sample_config() -> BuildConfig {
