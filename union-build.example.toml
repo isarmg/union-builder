@@ -1,0 +1,30 @@
+schema_version = 1
+require_clean_sources = true
+
+[distribution]
+name = "unionc"
+version = "0.3.6"
+source = ".union-sources/union-rust"
+repository = "https://github.com/isarmg/union-rust.git"
+revision = "0000000000000000000000000000000000000000"
+package = "unionc"
+binary = "unionc"
+base_features = []
+output = "dist"
+
+[[module]]
+id = "photo-backup"
+source = ".union-sources/photo-backup"
+repository = "https://github.com/isarmg/photo-backup.git"
+revision = "0000000000000000000000000000000000000000"
+package = "photo-backup-server"
+binary = "photo-backup-server"
+union_feature = "module-photo-backup"
+cargo_features = []
+
+[module.runtime]
+bind = "127.0.0.1:18102"
+gateway_path = "/modules/photo-backup"
+liveness_path = "/health/live"
+readiness_path = "/health/ready"
+
