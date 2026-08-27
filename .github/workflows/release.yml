@@ -43,7 +43,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          install -Dm755 "target/${{ matrix.target }}/release/union-builder" "dist/${{ matrix.asset }}"
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/release/union-builder" "dist/${{ matrix.asset }}"
+          chmod 0755 "dist/${{ matrix.asset }}"
       - name: Stage Windows binary
         if: runner.os == 'Windows'
         shell: pwsh
@@ -80,4 +82,3 @@ jobs:
           sha256sum --check SHA256SUMS
           gh release create "$GITHUB_REF_NAME" ./* \
             --verify-tag --generate-notes --title "Union Builder ${GITHUB_REF_NAME#v}"
-
