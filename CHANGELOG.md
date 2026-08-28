@@ -38,6 +38,8 @@
   artifact/archive names; validate the full profile on fixed native x64 and arm64 Ubuntu runners.
 - Keep the Union Builder helper CLI's Linux, Windows and macOS releases separate from the narrower
   Union Server support matrix.
+- Keep cross-machine staging available while refusing install/rollback when a release target does
+  not match the current Linux host; document the Ubuntu 24.04 GNU/glibc compatibility baseline.
 
 ## 1.0.0 - 2026-08-27
 

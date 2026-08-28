@@ -154,7 +154,13 @@ union-builder rollback --root /opt/union
 
 受支持的 Linux Server 上，`stage` 写入不可变 `releases/<release-id>` slot；`install` 原子切换
 相对 `current` 符号链接；`rollback` 切回 previous slot。Builder CLI 可在 Windows/macOS 运行，
-用于配置审查或离线验证，但不会由此产生 Windows/macOS Union Server 支持承诺。
+用于配置审查、跨机 staging 或离线验证，但不会由此产生 Windows/macOS Union Server 支持承诺。
+`stage` 可以预置另一 Linux 架构的已验证包；`install` 与 `rollback` 则在修改 `current` 前强制
+匹配当前 Linux 主机，拒绝跨架构或非 Linux 激活。
+
+当前正式 Server 二进制使用 Ubuntu 24.04 原生 GNU 工具链链接，因此其运行兼容基线由该 runner
+的 glibc/系统 ABI 决定；“支持 Linux amd64/arm64”不表示未经验证即可在任意更旧的 Linux 发行版
+运行。扩大兼容范围前必须另行选择并验证更旧 GNU sysroot 或 musl 构建。
 
 重要边界：Builder 回滚的只是发行文件与指针，**不回滚数据库 Migration、模块数据库、媒体或
 其他业务数据**。详见 [Release lifecycle](docs/RELEASE-LIFECYCLE.md)。

@@ -76,14 +76,14 @@ enum Command {
         #[arg(long)]
         root: PathBuf,
     },
-    /// Stage and atomically activate one complete Union release (Unix only).
+    /// Stage and atomically activate a target-matched release (supported Linux hosts only).
     Install {
         #[arg(long)]
         release: PathBuf,
         #[arg(long)]
         root: PathBuf,
     },
-    /// Atomically reactivate the previous complete Union release (Unix only).
+    /// Reactivate a target-matched previous release (supported Linux hosts only).
     Rollback {
         #[arg(long)]
         root: PathBuf,

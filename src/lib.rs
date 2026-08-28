@@ -1968,7 +1968,16 @@ pub fn stage_release(release: &Path, root: &Path) -> Result<InstallResult> {
 
 /// Runtime enable/disable state remains owned by Core and is not changed here.
 pub fn install_release(release: &Path, root: &Path) -> Result<InstallResult> {
+    let host_target = resolve_server_target(None)?;
+    verify_release_for_target(release, host_target)
+        .context("refusing to activate a Union release for a different host target")?;
     let mut result = stage_release(release, root)?;
+    let staged = verify_release_for_target(&result.release, host_target)
+        .context("refusing to activate a staged Union release for a different host target")?;
+    ensure!(
+        staged.release_id == result.release_id,
+        "staged release slot does not match its id before activation"
+    );
     let current = read_pointer(root, "current")?;
     let previous = read_pointer(root, "previous")?;
     ensure!(
@@ -1989,11 +1998,13 @@ pub fn install_release(release: &Path, root: &Path) -> Result<InstallResult> {
 
 /// This rolls back immutable release files, never module databases or stored data.
 pub fn rollback_install(root: &Path) -> Result<InstallResult> {
+    let host_target = resolve_server_target(None)?;
     ensure_normal_directory("install root", root)?;
     let current = read_pointer(root, "current")?.context("no active Union release")?;
     let previous = read_pointer(root, "previous")?.context("no previous Union release")?;
     let destination = root.join("releases").join(&previous);
-    let verified = verify_release(&destination)?;
+    let verified = verify_release_for_target(&destination, host_target)
+        .context("refusing to reactivate a Union release for a different host target")?;
     ensure!(verified.release_id == previous, "previous slot id mismatch");
     switch_pointer(root, "current", &previous)?;
     switch_pointer(root, "previous", &current)?;
@@ -3189,22 +3200,104 @@ output = "dist"
         );
     }
 
-    #[cfg(unix)]
+    #[cfg(all(
+        target_os = "linux",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     #[test]
     fn install_and_rollback_switch_complete_releases() {
         let temporary = tempfile::tempdir().unwrap();
         let first = temporary.path().join("first");
         let second = temporary.path().join("second");
         let root = temporary.path().join("install");
-        make_fake_release(&first, "0.5.0", "first");
-        make_fake_release(&second, "0.5.1", "second");
+        let host_target = resolve_server_target(None).unwrap();
+        make_fake_release_for_target(&first, "0.5.0", "first", host_target);
+        make_fake_release_for_target(&second, "0.5.1", "second", host_target);
         let a = install_release(&first, &root).unwrap();
         let b = install_release(&second, &root).unwrap();
         assert_eq!(b.previous_release_id, Some(a.release_id.clone()));
         assert_eq!(rollback_install(&root).unwrap().release_id, a.release_id);
     }
 
+    #[cfg(all(
+        target_os = "linux",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
+    #[test]
+    fn stage_allows_another_linux_architecture_but_install_rejects_it() {
+        let temporary = tempfile::tempdir().unwrap();
+        let release = temporary.path().join("release");
+        let root = temporary.path().join("install");
+        let other_target = match resolve_server_target(None).unwrap() {
+            ServerTarget::LinuxAmd64 => ServerTarget::LinuxArm64,
+            ServerTarget::LinuxArm64 => ServerTarget::LinuxAmd64,
+        };
+        make_fake_release_for_target(&release, "0.5.0", "other", other_target);
+
+        let staged = stage_release(&release, &root).unwrap();
+        assert_eq!(
+            verify_release(&staged.release).unwrap().server_target,
+            other_target
+        );
+        let error = install_release(&release, &root).unwrap_err().to_string();
+        assert!(error.contains("different host target"), "{error}");
+        assert!(read_pointer(&root, "current").unwrap().is_none());
+    }
+
+    #[cfg(all(
+        target_os = "linux",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
+    #[test]
+    fn rollback_rejects_a_previous_slot_for_another_architecture() {
+        let temporary = tempfile::tempdir().unwrap();
+        let first = temporary.path().join("first");
+        let second = temporary.path().join("second");
+        let root = temporary.path().join("install");
+        let host_target = resolve_server_target(None).unwrap();
+        let other_target = match host_target {
+            ServerTarget::LinuxAmd64 => ServerTarget::LinuxArm64,
+            ServerTarget::LinuxArm64 => ServerTarget::LinuxAmd64,
+        };
+        make_fake_release_for_target(&first, "0.5.0", "first", host_target);
+        make_fake_release_for_target(&second, "0.5.1", "second", host_target);
+        let previous = install_release(&first, &root).unwrap();
+        let current = install_release(&second, &root).unwrap();
+
+        let previous_slot = root.join("releases").join(&previous.release_id);
+        let manifest_path = previous_slot.join("union-release.json");
+        let mut manifest: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&manifest_path).unwrap()).unwrap();
+        manifest["distribution"]["architecture"] = other_target.architecture().into();
+        fs::write(
+            &manifest_path,
+            format!("{}\n", serde_json::to_string_pretty(&manifest).unwrap()),
+        )
+        .unwrap();
+        write_checksums(&previous_slot, &previous_slot.join("SHA256SUMS")).unwrap();
+
+        let error = rollback_install(&root).unwrap_err().to_string();
+        assert!(error.contains("different host target"), "{error}");
+        assert_eq!(
+            read_pointer(&root, "current").unwrap().as_deref(),
+            Some(current.release_id.as_str())
+        );
+        assert_eq!(
+            read_pointer(&root, "previous").unwrap().as_deref(),
+            Some(previous.release_id.as_str())
+        );
+    }
+
     fn make_fake_release(path: &Path, version: &str, executable: &str) {
+        make_fake_release_for_target(path, version, executable, ServerTarget::LinuxAmd64);
+    }
+
+    fn make_fake_release_for_target(
+        path: &Path,
+        version: &str,
+        executable: &str,
+        server_target: ServerTarget,
+    ) {
         fs::create_dir_all(path.join("bin")).unwrap();
         fs::create_dir_all(path.join("modules")).unwrap();
         fs::create_dir_all(path.join("share/union/web")).unwrap();
@@ -3225,7 +3318,8 @@ output = "dist"
                     "distribution": {
                         "name": "unionc", "version": version,
                         "revision": "a".repeat(40),
-                        "platform": "linux", "architecture": "amd64",
+                        "platform": server_target.platform(),
+                        "architecture": server_target.architecture(),
                         "executable": "bin/unionc",
                         "web_shell": "share/union/web"
                     },

@@ -23,11 +23,16 @@ Builder 2.0 的文件事务单位是 Core、Web Shell 和所选模块包组成�
 ## Staging 与激活
 
 `stage` 先验证输入，再复制到 install root 同一文件系统中的临时目录，复验后 rename 为不可变
-`releases/<release-id>`。已有同 ID slot 只会验证并复用，绝不覆盖。
+`releases/<release-id>`。已有同 ID slot 只会验证并复用，绝不覆盖。因为 staging 可以服务另一台
+机器，它允许预置另一种受支持的 Linux 架构。
 
 `install` 在 stage 后原子替换 `current` 相对符号链接，并保留原 current 为 `previous`。运行方
-看到的始终是一个完整 release slot。Builder 不启停 systemd 服务、不修改 Core 的模块 enabled
-状态，也不自动执行数据库迁移。
+看到的始终是一个完整 release slot。`install` 与 `rollback` 在修改指针前必须把发行目标与当前
+Linux 主机匹配；amd64/arm64 互换以及在非 Linux Unix 上激活都会被拒绝。Builder 不启停 systemd
+服务、不修改 Core 的模块 enabled 状态，也不自动执行数据库迁移。
+
+正式包由 Ubuntu 24.04 的原生 GNU runner 链接，其 glibc/系统 ABI 是当前实际兼容基线；目标架构
+枚举本身不承诺任意旧 Linux 发行版可运行。改变 sysroot 或切换 musl 必须作为新的构建契约验收。
 
 建议上线编排：
 
