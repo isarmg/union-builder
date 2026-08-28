@@ -1,9 +1,9 @@
 [package]
 name = "union-builder"
-version = "1.0.0"
+version = "2.0.0"
 edition = "2024"
 rust-version = "1.98"
-description = "Reproducible compile-time module selector and release assembler for Union"
+description = "Reproducible release-bundled plugin builder and lifecycle tool for Union"
 authors = ["sarmg <isarmg@163.com>"]
 license = "Apache-2.0"
 repository = "https://github.com/isarmg/union-builder"
@@ -16,6 +16,8 @@ hex = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+# Keep the package validator pinned independently from every source profile.
+sarmg-platform-core = { git = "https://github.com/isarmg/sarmg-platform.git", rev = "c788db2c349f159ad91df93f494c8ef72747a0d0" }
 tempfile = "3"
 toml = "0.9"
 

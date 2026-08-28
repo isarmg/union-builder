@@ -1,51 +1,59 @@
-# Union 单一发行包生命周期
+# Union 发行包生命周期
 
-本文定义 Builder 1.0.0 的交付事务边界。一次发布的原子单位是整个 Union 目录，不是单个
-worker。禁止只替换 `libexec/union/modules` 中的某个文件，因为 Union 控制面 feature、worker
-二进制、前端资源和网关契约必须来自同一个构建图。
+Builder 2.0 的文件事务单位是 Core、Web Shell 和所选模块包组成的完整 Union 发行目录。运行时
+启停是 Core 的状态事务，不是 Builder 的文件事务。
 
-## 发布前
+## 发布前门禁
 
-1. 确认官方 profile 中每个 revision 都是本次已推送源码的完整 40 位对象 ID；正式 profile
-   不得保留全零占位。
-2. 确认相同源码仓库的条目使用相同 revision，例如 Union 本体、Sunshine 与主机监控 worker。
-3. 对 profile 执行 `check` 和 `plan --format json`，保存 plan 作为审计证据。
-4. 执行 `build`；不要在输出目录中追加文件。
-5. 在交付和目标主机上分别执行 `verify`。
+1. 锁定每个源码的完整 Git revision；相同仓库条目使用同一 revision。Union 调用方构建应保存
+   `materialize` 输出作为证据；distribution、Sunshine、Host 必须同时等于 workflow 的
+   `github.sha`，其他仓库 pin 与包含集合必须保持原 profile 值。
+2. 对 profile 执行 `check` 和 `plan --format json`，保存 plan 作为审计证据。
+3. `check` 必须通过 Manifest v1、权限/config/version 一致性、平台兼容、完整依赖图，以及
+   `module_auth_routes` 与 Manifest 模块认证路由集合的精确一致性校验。
+4. 执行 `build`；不得向输出目录手工追加或替换文件。
+5. 在交付端和目标主机分别执行 `verify`。
 
-`SHA256SUMS` 是完整文件清单：缺失、篡改或额外文件均失败；每个输入源码的 Apache
-许可证及可选 `NOTICE` 也位于 `share/licenses` 并受同一清单保护。它不提供发布者身份认证，Release
-仍需通过受信任的 GitHub Release/TLS 渠道获取，或由外层制品签名系统签名。
+`SHA256SUMS` 是精确文件清单：缺失、篡改、额外文件、符号链接、非普通文件或丢失可执行位都
+会失败。SHA-256 不是发布者签名，发行包仍须通过受信任 TLS/Release 渠道或外层制品签名获取。
 
-## 安装事务
+## Staging 与激活
 
-`stage` 将发行包复制到同一文件系统内的临时目录，复验后 rename 为不可变 release slot。
-`install` 进一步用 rename 原子替换 `current` 相对符号链接。任何时刻运行方看到的 `current`
-要么是旧的完整发行版，要么是新的完整发行版，不会看到半复制目录。
+`stage` 先验证输入，再复制到 install root 同一文件系统中的临时目录，复验后 rename 为不可变
+`releases/<release-id>`。已有同 ID slot 只会验证并复用，绝不覆盖。
 
-Builder 不会删除旧 slot。空间回收是独立的、显式的运维操作，必须避开 `current`、`previous`
-以及正在运行进程实际使用的 release。
+`install` 在 stage 后原子替换 `current` 相对符号链接，并保留原 current 为 `previous`。运行方
+看到的始终是一个完整 release slot。Builder 不启停 systemd 服务、不修改 Core 的模块 enabled
+状态，也不自动执行数据库迁移。
 
-## 数据库与服务切换
+建议上线编排：
 
-推荐顺序：
+1. stage 新发行并 verify。
+2. Core 在候选 slot 中发现 bundled manifests，完成 compatibility/dependency 预检。
+3. 对每个模块的数据所有权范围创建备份/恢复点，执行向后兼容 Migration 并复验。
+4. drain/停止当前 Union，由 Builder install 切换文件 slot。
+5. 启动新 Core；Runtime 只恢复新发行中仍包含且此前 enabled 的模块，逐个检查健康与 Gateway。
+6. 失败时停止新 Core，评估数据兼容性后再决定是否执行文件 rollback。
 
-1. `stage` 新发行版。
-2. 使用新 slot 中的 worker 执行向后兼容的数据库迁移和 verify。
-3. 停止或 drain 当前 Union。
-4. `install` 激活已验证发行版（重复 staging 会安全复用相同 slot）。
-5. 启动 `/opt/union/current/bin/unionc` 并检查 Union 与每个已编译 worker 的 readiness。
-6. 失败时停止新进程，执行 `rollback`，再启动旧 Union。
+## 文件回滚不等于数据回滚
 
-Builder 只管理文件与指针，不重启服务，也不接触数据库 URL、密钥和模块数据。不可逆数据库
-迁移会破坏二进制回滚能力，属于模块迁移设计错误，不能由 Builder 的文件回滚补救。
+`rollback` 只交换 `current`/`previous` 指针。它不会：
 
-## 中断语义
+- 逆向执行 PostgreSQL、SQLite 或 embedded Migration；
+- 恢复模块数据库、媒体、监控数据或对象存储；
+- 恢复已被新 worker 改写的配置或外部系统状态；
+- 判断旧 worker 是否仍能读取升级后的 Schema。
 
-- staging 中断：临时目录不会成为 release slot，`current` 不变。
-- 激活前中断：旧 `current` 继续生效。
-- `current` rename 完成后中断：新发行版完整生效；release slots 均保留。
-- rollback 中断：`current` 始终指向一个完整 slot，可重新检查指针并再次执行运维切换。
+模块必须优先采用 expand/migrate/contract、向后兼容读取或明确的备份恢复流程。若 Migration
+不可逆，运维必须将“恢复旧文件”和“恢复模块数据”作为两个独立、有顺序约束的操作；不能因
+Builder 指针已回退就宣称系统完成回滚。
 
-`current` 的单次替换是原子的；`current` 与 `previous` 两个名字不是跨文件系统事务。两者必须
-位于同一真实 install root，且不得被第三方进程并发修改。部署编排应串行执行 Builder 命令。
+## 中断与并发
+
+- staging 中断：临时目录不会成为 slot，current 不变。
+- 激活前中断：旧 current 继续生效。
+- current rename 后中断：新完整 slot 生效，可复验后继续编排。
+- rollback 中断：current 始终指向完整 slot，但应复验 current/previous 再恢复服务。
+
+`current` 的单次 rename 是原子的；`current` 与 `previous` 两个名字不是跨文件系统事务。部署
+编排必须串行化 Builder 操作，并禁止第三方同时修改 install root。

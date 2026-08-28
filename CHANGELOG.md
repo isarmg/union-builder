@@ -1,35 +1,33 @@
 # Changelog
 
+## 2.0.0 - 2026-08-28
+
+- Replace compile-time Union business feature selection with release-bundled Plugin Manifest v1
+  packages; Core and Web Shell are each built once.
+- Define profiles as immutable release inclusion sets, explicitly separate from Core runtime
+  enable/disable state.
+- Validate manifests through `sarmg-platform-core`, then validate platform compatibility,
+  dependency versions/order, Cargo package/binary/version identity, required package files and
+  package identity across metadata files.
+- Assemble canonical `modules/<id>` packages containing a private process backend, independent
+  frontend, permission definitions, configuration schema, version metadata and migrations.
+- Generate final `source_revision` metadata from the locked source revision to avoid self-referential
+  source commits.
+- Reject symlinks, path escape, missing or non-executable workers, mismatched permissions/config/
+  version files, non-canonical backend paths, extra release files and SHA-256 mismatches.
+- Assemble into a temporary sibling directory and publish the output only after complete package and
+  checksum verification, so failed builds do not expose a partial distribution.
+- Preserve immutable staging and atomic Unix file activation/rollback while documenting that file
+  rollback never rolls back module databases or stored data.
+- Keep GitHub Actions as a thin CLI caller and keep modules out of independent public releases.
+- Add an auditable `materialize` command and explicit reusable-workflow opt-in that bind Union-owned
+  profile entries to the verified `isarmg/union-rust` caller SHA without creating a final-SHA cycle.
+- Require external reusable-workflow callers to pin the Builder checkout with an explicit full
+  `builder-revision`; Builder self-runs use `github.sha` and never resolve source from a movable tag.
+- Replace the blanket platform-auth route policy with a deny-by-default, exact-ID
+  `module_auth_routes` allowlist for non-browser device-token and short-lived media flows, persisted
+  into the release manifest and rechecked by offline verification.
+
 ## 1.0.0 - 2026-08-27
 
-- Make the CLI the single official path for selecting, building and packaging Union modules.
-- Build locked npm frontends without allowing manifest-provided shell commands and include every
-  generated asset in the release inventory.
-- Add official `minimal`, `storage`, `monitoring` and `full` compile-time profiles.
-- Let the reusable workflow select exactly one caller config or official profile, default manual
-  runs to `full`, and pin Node.js 26.7.0 for Union/Sentinel frontends.
-- Add strict release verification, immutable staging, atomic Unix activation and offline rollback.
-- Reject unlisted files, symlinks, unsafe paths and overlapping frontend install destinations.
-- Preserve executable modes across GitHub artifact transport, require version-matched release tags,
-  and include each selected source's Apache license/NOTICE files in the checksummed distribution.
-- Resolve all official profile revisions and assemble/verify the full Union distribution before
-  publishing Builder, while keeping validation artifacts out of the Builder CLI Release.
-- Derive executable suffixes from an explicit cross-compilation target instead of the host OS.
-
-## 0.2.0 - 2026-08-27
-
-- Add a pinned full-transition Union composition profile.
-- Add a reusable GitHub Actions workflow that invokes the CLI and uploads one Union artifact.
-- Support an exact core-only build with no optional process modules.
-- Always disable Union default features so the manifest is the complete source of module selection.
-
-## 0.1.1 - 2026-08-27
-
-- Stage Unix release binaries with portable commands supported by both GNU/Linux and macOS.
-
-## 0.1.0 - 2026-08-27
-
-- Add strict TOML validation and exact Git revision checks.
-- Add compile-time Union feature planning and process-module Cargo builds.
-- Add one-distribution assembly, release manifest and SHA-256 checksums.
-- Add optional exact-revision source fetching for CI and clean machines.
+- Initial compile-time feature-selection release. This architecture is superseded by 2.0.0.

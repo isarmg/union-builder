@@ -24,6 +24,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if grep -R -n --fixed-string 'TODO(release)' profiles; then
+            echo "official profiles still contain release pin placeholders" >&2
+            exit 1
+          fi
           if [[ "$GITHUB_REF" != refs/tags/* ]]; then
             echo "Manual validation build: no GitHub Release will be created."
             exit 0
@@ -110,7 +114,7 @@ jobs:
           path: dist/${{ matrix.asset }}
           if-no-files-found: error
 
-  validate-full-distribution:
+  validate-full-bundled-distribution:
     needs: verify
     uses: ./.github/workflows/build-union.yml
     with:
@@ -119,7 +123,7 @@ jobs:
 
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, validate-full-distribution]
+    needs: [build, validate-full-bundled-distribution]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

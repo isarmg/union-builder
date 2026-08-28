@@ -1,26 +1,21 @@
-schema_version = 1
+schema_version = 2
 require_clean_sources = true
 
-# Copy this example and replace every all-zero revision with an immutable 40-character
-# commit before use. Official releases use the already locked files in profiles/.
-
+# Replace all-zero revisions before use. A profile selects what the release contains; it never
+# selects Cargo features and it does not imply that a bundled module is enabled at runtime.
 [distribution]
 name = "unionc"
-version = "0.4.0"
+version = "0.5.0"
 source = ".union-sources/union-rust"
 repository = "https://github.com/isarmg/union-rust.git"
 revision = "0000000000000000000000000000000000000000"
 package = "unionc"
 binary = "unionc"
-base_features = []
 output = "dist"
 
-# Frontends are intentionally constrained: union-builder always runs `npm ci` then
-# `npm run build`; arbitrary commands are not accepted.
 [distribution.frontend]
 directory = "web"
 output = "dist"
-install = "share/union/web"
 
 [[module]]
 id = "photo-backup"
@@ -29,11 +24,11 @@ repository = "https://github.com/isarmg/photo-backup.git"
 revision = "0000000000000000000000000000000000000000"
 package = "photo-backup-server"
 binary = "photo-backup-server"
-union_feature = "module-photo-backup"
-cargo_features = []
+bundle = "."
+module_auth_routes = ["upload-part", "mobile-api"]
 
-[module.runtime]
-bind = "127.0.0.1:18102"
-gateway_path = "/modules/photo-backup"
-liveness_path = "/health/live"
-readiness_path = "/health/ready"
+# Optional: when a module owns an npm frontend build, Builder builds it separately and uses this
+# output as modules/<id>/frontend. Otherwise checked-in bundle frontend assets are packaged.
+# [module.frontend]
+# directory = "module-web"
+# output = "dist"

@@ -1,57 +1,44 @@
-# Official profile: Union + private Sentinel and host-monitoring workers.
-# Locked source revisions for the Union 0.4.0 release line.
-schema_version = 1
+# Official profile: release-bundled Sentinel and host-monitoring process modules.
+# Immutable coordinated source graph for Builder 2.0.0.
+schema_version = 2
 require_clean_sources = true
 
 [distribution]
 name = "unionc"
-version = "0.4.0"
+version = "0.5.0"
 source = "../.union-sources/union-rust"
 repository = "https://github.com/isarmg/union-rust.git"
-revision = "63af6330f3888c9418f61cd9e7265fc8b70db1bf"
+revision = "c445ed6168514d6a28cbb5e9f46904ffbe6618bd"
 package = "unionc"
 binary = "unionc"
-base_features = []
 output = "../dist/monitoring"
 
 [distribution.frontend]
 directory = "web"
 output = "dist"
-install = "share/union/web"
 
 [[module]]
 id = "sentinel-monitor"
 source = "../.union-sources/sentinel-monitor"
 repository = "https://github.com/isarmg/sentinel-monitor.git"
-revision = "47dfa54ee2f441eb91918ca61d56e650c431ca66"
+revision = "ad67548d7dab752cf7edc27751c9c3561f62dd11"
 package = "sentinel-monitor"
 binary = "sentinel-monitor"
-union_feature = "module-sentinel-monitor"
-cargo_features = []
-
-[module.frontend]
-directory = "web"
-output = "dist"
-install = "share/union/modules/sentinel-monitor"
-
-[module.runtime]
-bind = "127.0.0.1:18101"
-gateway_path = "/modules/sentinel-monitor"
-liveness_path = "/health/live"
-readiness_path = "/health/ready"
+bundle = "."
+module_auth_routes = ["media-hls"]
 
 [[module]]
 id = "host-monitoring"
 source = "../.union-sources/union-rust"
 repository = "https://github.com/isarmg/union-rust.git"
-revision = "63af6330f3888c9418f61cd9e7265fc8b70db1bf"
+revision = "c445ed6168514d6a28cbb5e9f46904ffbe6618bd"
 package = "union-host-monitoring-worker"
 binary = "union-host-monitoring-worker"
-union_feature = "module-host-monitoring"
-cargo_features = []
-
-[module.runtime]
-bind = "127.0.0.1:18105"
-gateway_path = "/modules/host-monitoring"
-liveness_path = "/health/live"
-readiness_path = "/health/ready"
+bundle = "host-monitoring-worker"
+module_auth_routes = [
+  "agent-report",
+  "pairing-create",
+  "pairing-read",
+  "pairing-status",
+  "agent-activate",
+]

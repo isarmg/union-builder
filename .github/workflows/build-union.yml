@@ -9,7 +9,7 @@ on:
         default: ""
         type: string
       profile:
-        description: Official Builder profile (minimal, storage, monitoring or full); mutually exclusive with config
+        description: Official release inclusion profile (minimal, storage, monitoring or full); mutually exclusive with config
         required: false
         default: ""
         type: string
@@ -17,6 +17,21 @@ on:
         description: Uploaded artifact name
         required: false
         default: union-distribution
+        type: string
+      materialize-caller-source:
+        description: Replace Union-owned profile entries with the verified Union caller checkout
+        required: false
+        default: false
+        type: boolean
+      caller-revision:
+        description: Explicit full caller Git ID; required when materialize-caller-source is true
+        required: false
+        default: ""
+        type: string
+      builder-revision:
+        description: Immutable 40-character union-builder Git ID; required for external callers
+        required: false
+        default: ""
         type: string
   workflow_dispatch:
     inputs:
@@ -41,6 +56,16 @@ on:
         required: true
         default: union-distribution
         type: string
+      materialize-caller-source:
+        description: Union-only caller materialization (normally false for Builder dispatches)
+        required: true
+        default: false
+        type: boolean
+      caller-revision:
+        description: Full caller Git ID when caller materialization is enabled
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -54,13 +79,51 @@ jobs:
         with:
           path: workspace
           persist-credentials: false
+      - name: Resolve an immutable Union Builder source revision
+        id: builder-source
+        shell: bash
+        env:
+          CALLER_REPOSITORY: ${{ github.repository }}
+          BUILDER_REVISION: ${{ inputs['builder-revision'] }}
+          WORKFLOW_REVISION: ${{ github.sha }}
+          CALLED_WORKFLOW_REF: ${{ job.workflow_ref }}
+          CALLED_WORKFLOW_SHA: ${{ job.workflow_sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$CALLER_REPOSITORY" == "isarmg/union-builder" ]]; then
+            if [[ -n "$BUILDER_REVISION" && "$BUILDER_REVISION" != "$WORKFLOW_REVISION" ]]; then
+              echo "Builder self-runs may only use github.sha as builder-revision" >&2
+              exit 2
+            fi
+            revision="$WORKFLOW_REVISION"
+          else
+            if [[ ! "$BUILDER_REVISION" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "external callers must provide builder-revision as a canonical lowercase 40-character Git object ID" >&2
+              exit 2
+            fi
+            expected_workflow_ref="isarmg/union-builder/.github/workflows/build-union.yml@$BUILDER_REVISION"
+            if [[ "$CALLED_WORKFLOW_REF" != "$expected_workflow_ref" ]]; then
+              echo "external callers must use the same full Builder commit in uses@<sha> and builder-revision" >&2
+              exit 2
+            fi
+            if [[ "$CALLED_WORKFLOW_SHA" != "$BUILDER_REVISION" ]]; then
+              echo "the resolved called-workflow commit does not match builder-revision" >&2
+              exit 2
+            fi
+            revision="$BUILDER_REVISION"
+          fi
+
+          if [[ ! "$revision" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "resolved Builder revision is not a canonical lowercase full Git object ID" >&2
+            exit 2
+          fi
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
       - name: Check out Union Builder
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: isarmg/union-builder
-          # Builder's own runs validate the selected commit before or during tagging. External
-          # callers use the immutable public version that owns this workflow contract.
-          ref: ${{ github.repository == 'isarmg/union-builder' && github.sha || 'v1.0.0' }}
+          ref: ${{ steps.builder-source.outputs.revision }}
           path: tool
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
@@ -119,10 +182,62 @@ jobs:
             exit 2
           fi
           echo "config=$selected" >> "$GITHUB_OUTPUT"
-      - name: Assemble exact Union graph
+      - name: Materialize the explicitly authorized Union caller checkout
+        id: materialization
+        shell: bash
+        env:
+          ENABLED: ${{ inputs['materialize-caller-source'] }}
+          CALLER_REVISION: ${{ inputs['caller-revision'] }}
+          CALLER_REPOSITORY: ${{ github.repository }}
+          WORKFLOW_REVISION: ${{ github.sha }}
+          SELECTED_CONFIG: ${{ steps.composition.outputs.config }}
+          INPUT_CONFIG: ${{ inputs.config }}
+          INPUT_PROFILE: ${{ inputs.profile }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$ENABLED" != "true" ]]; then
+            if [[ "$CALLER_REPOSITORY" == "isarmg/union-rust" ]]; then
+              echo "isarmg/union-rust callers must materialize their exact caller checkout" >&2
+              exit 2
+            fi
+            if [[ -n "$CALLER_REVISION" ]]; then
+              echo "caller-revision requires materialize-caller-source=true" >&2
+              exit 2
+            fi
+            echo "config=$SELECTED_CONFIG" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$CALLER_REPOSITORY" != "isarmg/union-rust" ]]; then
+            echo "caller materialization is restricted to isarmg/union-rust" >&2
+            exit 2
+          fi
+          if [[ -n "$INPUT_CONFIG" || -z "$INPUT_PROFILE" ]]; then
+            echo "caller materialization requires an official Builder profile, not a caller config" >&2
+            exit 2
+          fi
+          if [[ ! "$CALLER_REVISION" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "caller-revision must be a canonical lowercase 40-character Git object ID" >&2
+            exit 2
+          fi
+          if [[ "$CALLER_REVISION" != "$WORKFLOW_REVISION" ]]; then
+            echo "caller-revision must equal github.sha" >&2
+            exit 2
+          fi
+
+          materialized="${SELECTED_CONFIG}.union-caller-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.toml"
+          tool/target/release/union-builder materialize \
+            --config "$SELECTED_CONFIG" \
+            --caller-repository "https://github.com/isarmg/union-rust.git" \
+            --caller-source "$GITHUB_WORKSPACE/workspace" \
+            --caller-revision "$CALLER_REVISION" \
+            --output "$materialized"
+          echo "config=$materialized" >> "$GITHUB_OUTPUT"
+      - name: Assemble Core, Web Shell and selected module packages via Builder CLI
         run: >-
           tool/target/release/union-builder build
-          --config "${{ steps.composition.outputs.config }}"
+          --config "${{ steps.materialization.outputs.config }}"
           --output "$RUNNER_TEMP/union-distribution"
       - name: Verify and wrap the distribution without losing Unix modes
         shell: bash

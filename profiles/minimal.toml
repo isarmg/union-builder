@@ -1,20 +1,18 @@
-# Official profile: Union control plane only.
-# Locked source revisions for the Union 0.4.0 release line.
-schema_version = 1
+# Official profile: Union Core and Web Shell, with no bundled business modules.
+# Immutable coordinated source graph for Builder 2.0.0.
+schema_version = 2
 require_clean_sources = true
 
 [distribution]
 name = "unionc"
-version = "0.4.0"
+version = "0.5.0"
 source = "../.union-sources/union-rust"
 repository = "https://github.com/isarmg/union-rust.git"
-revision = "63af6330f3888c9418f61cd9e7265fc8b70db1bf"
+revision = "c445ed6168514d6a28cbb5e9f46904ffbe6618bd"
 package = "unionc"
 binary = "unionc"
-base_features = []
 output = "../dist/minimal"
 
 [distribution.frontend]
 directory = "web"
 output = "dist"
-install = "share/union/web"

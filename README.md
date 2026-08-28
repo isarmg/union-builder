@@ -1,194 +1,139 @@
 # Union Builder
 
-`union-builder` 是 Union 唯一的官方组合构建、打包和发布包生命周期工具。它把原来散落在
-GitHub Actions YAML 中的源码固定、Cargo feature 选择、Rust/前端构建、发行目录组装、完整性
-验证、安装和回滚收敛为同一套命令。GitHub Actions 只准备工具链并调用 CLI，不再承载另一套
-隐式构建逻辑。
+`union-builder` 2.0 是 Union 官方发行组合、契约验证、打包和文件生命周期 CLI。Builder 在发行
+构建阶段决定发行包**包含**哪些模块；Union Core 在运行阶段决定这些已包含模块是否**运行**。
+两者是不同状态，profile 不再映射 Cargo feature，也不会替用户启用模块。
 
-## 架构保证
+## 架构边界
 
-- 清单在编译期选择模块，并把对应 `module-*` feature 编译进 Union 控制面。
-- 每个选中模块编译为 Union 私有 worker，安装到 `libexec/union/modules` 并在运行时保持进程隔离。
-- worker 必须监听 loopback 固定地址；唯一公共入口是 Union 网关。
-- 输出是一个完整 Union 发行目录；本工具不生成或发布模块独立程序、容器或 Release。
-- 所有源码使用完整 40 位 Git revision，不能使用会漂移的 branch 或 tag。
-- 前端只允许固定流程 `npm ci`、`npm run build`，清单不能注入 shell 命令。
-- 每个源码输入必须提供普通文件形式的 `LICENSE` 或 `LICENSE-APACHE`；发行目录保存各自许可
-  文本及可选 `NOTICE`，并纳入完整性清单。
-- `SHA256SUMS` 覆盖发行目录中的每个程序、前端资源和清单；额外文件同样会导致验证失败。
+- Core 和 Web Shell 各构建一次。Builder 不向 Core 传递任何业务 Cargo feature；Core 的 Cargo
+  graph 本身不得包含业务模块代码。Web Shell 只提供认证、导航、权限门控和动态模块加载能力。
+- 每个选中的模块 Backend 独立编译为私有 worker，并与该模块的 Manifest、权限、配置 Schema、
+  版本元数据、Frontend 和 Migration 组装为 `modules/<id>` 包。
+- 模块只允许 `process` execution、loopback bind，Backend service 必须具有 platform visibility，
+  因此所有业务流量都只能通过 Union Gateway。管理面路由必须使用平台认证与 RBAC；只有 profile
+  的 `module_auth_routes` 精确列出的非浏览器设备令牌或短期媒体能力路由可以使用模块认证。Builder
+  不生成模块独立公共产品、容器镜像或模块 Release。
+- Manifest v1 使用 `sarmg-platform-core` 的同一 Rust validator；整个选择集还会校验 Core/API
+  兼容范围、依赖版本、缺失依赖、服务名冲突和依赖环。
+- profile 是不可变源码 revision 与发行包含集合；模块的 enabled/disabled 状态由 Core 持久化，
+  不进入 profile、release manifest 或 Builder install 事务。
+- GitHub Actions 只安装工具链并调用 CLI，没有第二套隐藏的组合、校验或打包逻辑。
 
-这套模型是“编译期裁剪 + 运行时进程隔离”，类似 Kconfig 决定交付图，而不是动态插件目录。
-向 `libexec` 复制额外程序不会让 Union 识别它。
+这是一种“发行时模块组合 + 运行时启停 + 独立进程隔离”模型。它既不是把业务 feature 编译进
+Core，也不是从公网任意下载代码的插件市场。
 
-## 安装 Builder
+## 模块源模板
 
-Builder 1.0.0 Release 提供 Linux、macOS 和 Windows 命令行程序，也可从源码构建：
+每个独立模块仓库在项目根提供 bundle 元数据；Union 仓库内的 Sunshine/Host worker 则以各自
+worker 根为 bundle。Builder 只复制下列 Manifest 声明的白名单，不会复制 `src/`、`.git/`、
+`target/`、mobile、docs 或其他源码内容：
+
+```text
+<bundle-root>/
+├── manifest.json
+├── permissions.json
+├── version.json
+├── config/schema.json
+├── frontend/entry.js
+├── frontend/...                 # manifest 引用的样式和资源
+├── migrations/...               # embedded migration 可省略
+└── version/...                  # 可选 release notes
+```
+
+`permissions.json` 必须与 Manifest `permissions` 数组完全一致。源 `version.json` 声明
+`manifest_version`、`id`、`version`，以及可选且必须与 Manifest 一致的 `channel`、`distribution`、
+`license`、`compatibility`。源文件不能声明 `source_revision`，因为提交不能预知自身 Git ID；
+Builder 从 profile 锁定的 revision 生成最终 `version.json`，并同时把 revision 写入最终 Manifest。
+
+如果模块声明 `[module.frontend]`，Builder 对该模块单独执行固定的 `npm ci`、`npm run build`，
+并将 output 作为模块 frontend；否则使用 bundle 中已版本化的独立 ES module 资源。两种方式都
+保持模块页面与 Web Shell 分离，不能把另一份 React/ReactDOM 打进模块入口。
+
+## 使用
 
 ```bash
 cargo install --path . --locked
-```
 
-构建与验证命令在所有平台可用。原子激活和回滚依赖 Unix 相对符号链接，目前只支持 Unix；
-Windows 可以构建、验证和 staging，但必须由平台安装器完成激活。
-
-## 构建一个发行版
-
-```bash
 union-builder check --config profiles/full.toml
 union-builder plan --config profiles/full.toml
 union-builder plan --config profiles/full.toml --format json
-union-builder build --config profiles/full.toml --profile release
+union-builder materialize \
+  --config profiles/full.toml \
+  --caller-repository https://github.com/isarmg/union-rust.git \
+  --caller-source /absolute/path/to/union-rust \
+  --caller-revision <full-40-character-git-id> \
+  --output profiles/full.materialized.toml
+union-builder build --config profiles/full.toml --cargo-profile release
 union-builder verify --release dist/full
 ```
 
-`check` 验证清单、源码 revision、工作树状态、模块 ID、feature、URL 路径、端口冲突、loopback
-约束和前端安装路径。若本地 `source` 不存在且配置了无凭据 GitHub HTTPS `repository`，工具只
-获取指定 revision，不检出默认分支。`require_clean_sources = true` 会拒绝脏源码树。
+`check` 在编译前验证完整源码身份、许可证、bundle 文件、Manifest 语义、依赖拓扑和平台兼容性。
+本地 source 不存在时，只能从无凭据 GitHub HTTPS URL 获取完整 40 位 revision。正式 profile
+设置 `require_clean_sources = true`，拒绝脏工作树。
 
-`build` 始终对 Union 使用 `--no-default-features`，清单因此是交付图的唯一事实来源。它拒绝
-覆盖已有输出目录。发行目录形状为：
+`materialize` 专用于可复用 Actions 中的 Union 调用方构建：它验证调用方路径确为 Git worktree
+根、`HEAD` 等于显式 40 位 revision，并要求 repository 精确等于
+`https://github.com/isarmg/union-rust.git`。随后只把 distribution 以及同仓的 Sunshine/Host 条目
+改指向该 checkout；模块包含集合、其他仓库条目、版本、包名和 binary 均保持不变。输出会重新
+通过 strict schema v2 解析与校验，采用原子发布且拒绝覆盖。该命令不会修改正式 profile，因此
+打破的是发布编排的最终 SHA 循环，而不是放宽源码身份校验。
+
+外部 reusable-workflow 调用还必须把同一个不可变 Builder SHA 同时写入 `uses@<sha>` 与
+`builder-revision`；workflow 会在 checkout Builder、物化或构建前拒绝缺失、短 SHA 和 tag：
+
+```yaml
+uses: isarmg/union-builder/.github/workflows/build-union.yml@0123456789abcdef0123456789abcdef01234567
+with:
+  profile: full
+  builder-revision: 0123456789abcdef0123456789abcdef01234567
+  materialize-caller-source: true
+  caller-revision: ${{ github.sha }}
+```
+
+Builder 仓库自身的 workflow call 和手工 dispatch 不接受另一个源码 pin，始终使用当前
+`github.sha`。
+
+`build` 拒绝覆盖已有目录，输出：
 
 ```text
 dist/full/
 ├── bin/unionc
-├── libexec/union/modules/<module-id>
+├── modules/
+│   └── <id>/
+│       ├── manifest.json
+│       ├── permissions.json
+│       ├── version.json
+│       ├── config/schema.json
+│       ├── backend/<executable>
+│       ├── frontend/...
+│       └── migrations/...
 ├── share/union/web/...
-├── share/union/modules/<module-id>/...  # 仅有独立前端的模块
-├── share/licenses/unionc/...
-├── share/licenses/modules/<module-id>/...
+├── share/licenses/...
 ├── union-release.json
 └── SHA256SUMS
 ```
 
-清单示例见 [`union-build.example.toml`](union-build.example.toml)。
+`verify` 会再次运行 Manifest/依赖/兼容校验，检查 identity、version、source revision、必需文件、
+可执行位、所有 bundle 引用、无符号链接/路径逃逸，以及 `SHA256SUMS` 与实际文件集合完全一致；
+文件数、单文件/总字节、路径长度和目录深度均有上限，防止恶意包造成无界扫描。
+`union-release.json` 同时固化每个模块的 `module_auth_routes`，所以离线复验仍会拒绝 Manifest 增加、
+删除或改名任何模块认证例外。
 
-## 官方 profiles
-
-| Profile | 编译内容 | 适用范围 |
-|---|---|---|
-| `minimal` | Union 控制面 | 最小部署、基础管理 |
-| `storage` | Union、Photo Backup、Dufs | 照片备份和通用文件管理 |
-| `monitoring` | Union、Sentinel、主机监控 | 摄像头与主机可观测性 |
-| `full` | Union 和五个私有 worker | 完整功能部署 |
-
-仓库中的四个官方 profile 已锁定 Union 0.4.0 发行线所使用的完整 revision；它们既是构建输入，
-也是源码溯源记录。只有 `union-build.example.toml` 为便于复制而保留全零示例值，使用者必须先
-替换；`check` 会验证 revision 确实存在，因此示例配置不能被误发布。
-
-精确能力矩阵与配置边界见 [`docs/PROFILES.md`](docs/PROFILES.md)。
-
-## 前端配置
-
-发行本体或模块可声明：
-
-```toml
-[distribution.frontend]
-directory = "web"
-output = "dist"
-install = "share/union/web"
-```
-
-`directory` 相对源码根；`output` 相对该前端目录；`install` 相对发行根且必须位于
-`share/union` 的子目录。路径不能包含 `..`、绝对路径或重叠目标。输出树中的符号链接和特殊
-文件会被拒绝，所有普通文件都会进入校验和清单。
-
-构建 Union 主前端时，Builder 会从同一 profile 自动注入
-`UNIONC_WEB_MODULE_SUNSHINE` 与 `UNIONC_WEB_MODULE_HOST_MONITORING`。清单没有相应模块时
-值为 `false`，Vite/Rollup 会删除对应视图、JS 和 CSS；用户环境中的同名变量不能改变发行图。
-
-## 安装、升级和回滚
-
-推荐先验证，再安装：
+## 安装和回滚
 
 ```bash
-union-builder verify --release dist/full
-sudo union-builder install --release dist/full --root /opt/union
+union-builder stage --release dist/full --root /opt/union
+union-builder install --release dist/full --root /opt/union
+union-builder rollback --root /opt/union
 ```
 
-安装布局是不可变 release slots 加两个原子指针：
+Unix 上，`stage` 写入不可变 `releases/<release-id>` slot；`install` 原子切换相对 `current` 符号
+链接；`rollback` 切回 previous slot。Windows 支持构建、验证和 staging，但激活需由平台安装器
+处理。
 
-```text
-/opt/union/
-├── releases/<release-id>/...
-├── current  -> releases/<release-id>
-└── previous -> releases/<previous-release-id>
-```
+重要边界：Builder 回滚的只是发行文件与指针，**不回滚数据库 Migration、模块数据库、媒体或
+其他业务数据**。详见 [Release lifecycle](docs/RELEASE-LIFECYCLE.md)。
 
-`install` 先完整验证输入，再复制到临时目录、二次验证并原子发布到 `releases`；已存在的相同
-slot 只会复用，不会覆盖。最后原子切换 `current`，保留 `previous`。也可只执行 staging：
-
-```bash
-sudo union-builder stage --release dist/full --root /opt/union
-```
-
-服务管理器应执行 `/opt/union/current/bin/unionc`。数据库迁移必须保持向后兼容，且应在切换
-前完成模块自己的 `migrate/verify` 流程；Builder 不读取数据库秘密，也不替模块执行迁移。
-切换后若健康检查失败，停止新进程并执行：
-
-```bash
-sudo union-builder rollback --root /opt/union
-```
-
-回滚只交换 `current`/`previous`，不需要网络、源码仓库或重新编译，也不删除任何 release。
-完成指针切换后由服务管理器重启 Union。Builder 不主动停止进程或写 systemd 配置，这一边界
-避免构建工具持有运行时秘密和服务管理权限。
-
-生产切换顺序、数据库迁移前提和中断语义见
-[`docs/RELEASE-LIFECYCLE.md`](docs/RELEASE-LIFECYCLE.md)。
-
-## GitHub Actions
-
-可复用 workflow 支持两种且只能选择一种输入：Builder 仓库内的官方 `profile`，或调用仓库内的
-自定义 `config`。使用官方 profile 时，调用仓库不需要复制 TOML：
-
-```yaml
-jobs:
-  union:
-    uses: isarmg/union-builder/.github/workflows/build-union.yml@v1.0.0
-    with:
-      profile: full
-```
-
-自定义组合则只传调用仓库中的相对路径，不能同时传 `profile`：
-
-```yaml
-jobs:
-  union:
-    uses: isarmg/union-builder/.github/workflows/build-union.yml@v1.0.0
-    with:
-      config: release/union-build.toml
-      artifact-name: union-custom-distribution
-```
-
-`workflow_call` 会拒绝同时设置两项、两项都为空、未知 profile、绝对 config 路径和逃离调用仓库
-的路径。官方值仅允许 `minimal`、`storage`、`monitoring`、`full`。
-
-在 Builder 仓库手动运行 `Build Union Distribution` 时，`profile` 是下拉选项且默认 `full`。
-若要使用本仓库中的自定义清单，选择 `custom` 并填写 `config`；选择官方 profile 时必须让
-`config` 保持为空。手动运行会构建触发它的 Builder 提交，用于 tag 前候选验证；外部可复用调用
-固定使用已发布的 `v1.0.0` 工具实现。
-
-workflow 固定 Rust 1.98.0 和 Node.js 26.7.0，后者用于 Union/Sentinel 前端的 `npm ci` 与
-`npm run build`。YAML 只解析输入、准备固定工具链、构建 Builder CLI，然后调用一次
-`union-builder build`，先用同一 CLI 验证结果，再上传单一 `union-distribution` artifact。
-artifact 内只有 `union-distribution.tar`；内层 tar 专门保留 worker 的 Unix 可执行位，避免
-GitHub artifact 的 ZIP 传输把程序变成普通文件。模块选择、源码获取、前端构建、组装和校验
-仍全部由 CLI 决定。模块仓库不得复制独立编译、打包或发布 workflow；Builder 自身 Release
-仅发布 Builder CLI。Builder 发版门禁会解析四个官方 profile 的真实远端 revision，并额外组装、
-验证 full distribution；该验证 artifact 不会混入 Builder CLI Release。
-
-## 明确边界
-
-Builder 负责可重复源码选择、编译、前端资源、组装、校验、不可变 staging 和指针回滚。它不
-创建数据库、不生成或存储生产秘密、不开放 worker 网络端口、不配置反向代理、不管理 systemd、
-不决定数据迁移的业务兼容性，也不是通用 CI shell 执行器。
-
-## 开发验证
-
-```bash
-cargo fmt --all -- --check
-cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked
-```
-
-本仓库第一方代码和文档使用 [Apache License 2.0](LICENSE)。
+官方组合矩阵见 [Profiles](docs/PROFILES.md)，自定义字段见
+[`union-build.example.toml`](union-build.example.toml) 和 [config schema v2](docs/CONFIG-V2.md)。

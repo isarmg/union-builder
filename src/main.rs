@@ -13,24 +13,42 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Pin Union-owned entries to a verified workflow caller checkout and emit a new config.
+    Materialize {
+        #[arg(short, long, default_value = "union-build.toml")]
+        config: PathBuf,
+        /// Exact repository identity used to match the distribution and same-repository modules.
+        #[arg(long)]
+        caller_repository: String,
+        /// Local Git worktree root checked out by the calling workflow.
+        #[arg(long)]
+        caller_source: PathBuf,
+        /// Canonical lowercase 40-character Git ID of the caller checkout.
+        #[arg(long)]
+        caller_revision: String,
+        /// New schema-v2 config; an existing path is never overwritten.
+        #[arg(short, long)]
+        output: PathBuf,
+    },
     /// Validate source revisions and the complete build graph without compiling.
     Check {
         #[arg(short, long, default_value = "union-build.toml")]
         config: PathBuf,
     },
-    /// Print the exact packages, features, binaries and install paths that would be built.
+    /// Print the exact Core, Web Shell and release-bundled module packages to build.
     Plan {
         #[arg(short, long, default_value = "union-build.toml")]
         config: PathBuf,
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
     },
-    /// Compile the selected graph and assemble one Union distribution directory.
+    /// Build Core once, build selected modules independently, and assemble one distribution.
     Build {
         #[arg(short, long, default_value = "union-build.toml")]
         config: PathBuf,
+        /// Cargo artifact profile; module inclusion is selected only by --config.
         #[arg(long, default_value = "release")]
-        profile: String,
+        cargo_profile: String,
         #[arg(long)]
         target: Option<String>,
         #[arg(short, long)]
@@ -71,10 +89,30 @@ enum Format {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
+        Command::Materialize {
+            config,
+            caller_repository,
+            caller_source,
+            caller_revision,
+            output,
+        } => {
+            let result = union_builder::materialize_caller_checkout(
+                &config,
+                &caller_repository,
+                &caller_source,
+                &caller_revision,
+                &output,
+            )?;
+            println!(
+                "materialized {} Union-owned entry/entries at {}",
+                result.matched_entries,
+                result.output.display()
+            );
+        }
         Command::Check { config } => {
             let checked = union_builder::load_and_check(&config)?;
             println!(
-                "ok: {} {} with {} process module(s)",
+                "ok: {} {} with {} release-bundled process module(s)",
                 checked.config.distribution.name,
                 checked.config.distribution.version,
                 checked.config.modules.len()
@@ -90,14 +128,14 @@ fn main() -> Result<()> {
         }
         Command::Build {
             config,
-            profile,
+            cargo_profile,
             target,
             output,
         } => {
             let result = union_builder::build(
                 &config,
                 BuildOptions {
-                    profile,
+                    cargo_profile,
                     target,
                     output,
                 },
