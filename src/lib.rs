@@ -2603,11 +2603,13 @@ output = "dist"
             "build-host-agent-mobile-sdk:",
             "build-photo-android-client:",
             "build-photo-apple-client:",
+            "validate-release-assets:",
             "photo-backup-0.2.0-android-arm64-unsigned.apk",
             "photo-backup-0.2.0-ios-ipados-arm64-unsigned-app.tar.gz",
             "unionc-agent-mobile-sdk-0.5.0.tar.gz",
             "COMPANION-ASSETS.json",
             "sha256sum --check SHA256SUMS",
+            "name: union-builder-release-assets",
         ] {
             assert!(
                 release.contains(required),
