@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.1.0 - 2026-08-28
+
+- Make Union Builder Releases the single official publication surface for module Agent and client
+  artifacts while keeping their source and tests in the owning module repositories.
+- Build Host Monitoring Agent packages for Linux amd64/arm64, Windows amd64 and macOS arm64 from an
+  immutable module revision.
+- Publish Host Android/iOS/iPadOS support honestly as an embedded Rust source SDK; no native mobile
+  application shell exists yet, so the release does not claim an APK or IPA.
+- Build the Photo Backup Android arm64 unsigned release APK and an unsigned iOS/iPadOS device app
+  archive from its immutable source revision.
+- Add a machine-readable companion asset manifest and include every Builder, Agent and client asset
+  in one checksum file.
+- Mark every unsigned or repository-unsigned artifact as a build/signing input rather than production
+  trust-chain, notarization or app-store evidence.
+
 ## 2.0.0 - 2026-08-28
 
 - Replace compile-time Union business feature selection with release-bundled Plugin Manifest v1

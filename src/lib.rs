@@ -2584,6 +2584,46 @@ output = "dist"
     }
 
     #[test]
+    fn release_centrally_builds_declared_agent_and_photo_client_assets() {
+        let release = include_str!("../.github/workflows/release.yml");
+        let companion: serde_json::Value =
+            serde_json::from_str(include_str!("../companions/clients-v1.json")).unwrap();
+
+        assert_eq!(companion["schema_version"], 1);
+        assert_eq!(companion["release_owner"], "union-builder");
+        let clients = companion["clients"].as_array().unwrap();
+        assert_eq!(clients.len(), 2);
+        assert_eq!(clients[0]["id"], "host-monitoring-agent");
+        assert_eq!(clients[1]["id"], "photo-backup-client");
+
+        for required in [
+            "build-host-agent-linux:",
+            "build-host-agent-windows:",
+            "build-host-agent-macos-and-apple-mobile:",
+            "build-host-agent-mobile-sdk:",
+            "build-photo-android-client:",
+            "build-photo-apple-client:",
+            "photo-backup-0.2.0-android-arm64-unsigned.apk",
+            "photo-backup-0.2.0-ios-ipados-arm64-unsigned-app.tar.gz",
+            "unionc-agent-mobile-sdk-0.5.0.tar.gz",
+            "COMPANION-ASSETS.json",
+            "sha256sum --check SHA256SUMS",
+        ] {
+            assert!(
+                release.contains(required),
+                "central release is missing companion policy: {required}"
+            );
+        }
+
+        assert!(release.contains("repository: isarmg/photo-backup"));
+        assert!(release.contains("ref: ${{ env.PHOTO_CLIENT_REVISION }}"));
+        assert!(release.contains("assembleRelease"));
+        assert!(release.contains("CODE_SIGNING_ALLOWED=NO"));
+        assert!(release.contains("not an APK/IPA"));
+        assert!(!release.contains("photo-backup-0.2.0-ios-ipados-arm64.ipa"));
+    }
+
+    #[test]
     fn official_caller_materialization_rewrites_only_distribution() {
         let mut config = sample_union_config();
         let included_before = config

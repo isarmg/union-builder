@@ -1,5 +1,5 @@
 # Official profile: release-bundled Photo Backup and Dufs process modules.
-# Immutable coordinated source graph for Builder 2.0.0.
+# Immutable coordinated source graph for Builder 2.1.0.
 schema_version = 2
 require_clean_sources = true
 
@@ -21,7 +21,7 @@ output = "dist"
 id = "photo-backup"
 source = "../.union-sources/photo-backup"
 repository = "https://github.com/isarmg/photo-backup.git"
-revision = "abf8ced65b87a55c1701e1e3945c8c1f50099ae2"
+revision = "41c67959ff901cdc6c5caac3e678ea8430f0ec7c"
 package = "photo-backup-server"
 binary = "photo-backup-server"
 bundle = "."

@@ -1,6 +1,6 @@
 # Union Builder
 
-`union-builder` 2.0 是 Union 官方发行组合、契约验证、打包和文件生命周期 CLI。Builder 在发行
+`union-builder` 2.1 是 Union 官方发行组合、契约验证、打包和文件生命周期 CLI。Builder 在发行
 构建阶段决定发行包**包含**哪些模块；Union Core 在运行阶段决定这些已包含模块是否**运行**。
 两者是不同状态，profile 不再映射 Cargo feature，也不会替用户启用模块。
 
@@ -164,6 +164,23 @@ union-builder rollback --root /opt/union
 
 重要边界：Builder 回滚的只是发行文件与指针，**不回滚数据库 Migration、模块数据库、媒体或
 其他业务数据**。详见 [Release lifecycle](docs/RELEASE-LIFECYCLE.md)。
+
+## Agent 与客户端集中发布
+
+Builder Release 是 Union 模块 Agent/客户端的唯一官方发布面。模块仓库保留源码、测试和
+可复用构建边界，但不单独创建 GitHub Release。Builder 通过完整的不可变 revision 拉取它们，
+验证版本并产生到同一 Builder Release：
+
+- Host Monitoring Agent：Linux amd64/arm64 DEB/RPM、Windows amd64 MSI、macOS arm64 PKG；
+  Android/iOS/iPadOS 发布的是可嵌入 Rust 源码 SDK，因为当前没有完整原生应用壳。
+- Photo Backup Client：Android arm64 未签名 release APK，以及同时面向 iPhone 和 iPad 的
+  未签名 device `.app` 归档。
+
+Linux DEB/RPM 未使用仓库签名；MSI、PKG、APK 和 Apple `.app` 也未使用平台发布证书。
+这些是可验证的构建制品或后续签名输入，不代表生产信任链、公证或应用商店可上架。
+Release 中的 `COMPANION-ASSETS.json` 锁定每个客户端的仓库、revision、版本、平台和产物类型；
+`SHA256SUMS` 覆盖 Builder CLI 与全部集中发布产物。Dufs、Sentinel Monitor 和 Sunshine
+当前不存在独立 Agent/客户端，Builder 不伪造对应产物。
 
 官方组合矩阵见 [Profiles](docs/PROFILES.md)，自定义字段见
 [`union-build.example.toml`](union-build.example.toml) 和 [config schema v2](docs/CONFIG-V2.md)。

@@ -1,5 +1,5 @@
 # Official profile: all five release-bundled private process modules.
-# Immutable coordinated source graph for Builder 2.0.0.
+# Immutable coordinated source graph for Builder 2.1.0.
 schema_version = 2
 require_clean_sources = true
 
@@ -31,7 +31,7 @@ module_auth_routes = ["media-hls"]
 id = "photo-backup"
 source = "../.union-sources/photo-backup"
 repository = "https://github.com/isarmg/photo-backup.git"
-revision = "abf8ced65b87a55c1701e1e3945c8c1f50099ae2"
+revision = "41c67959ff901cdc6c5caac3e678ea8430f0ec7c"
 package = "photo-backup-server"
 binary = "photo-backup-server"
 bundle = "."
@@ -61,7 +61,7 @@ module_auth_routes = []
 id = "host-monitoring"
 source = "../.union-sources/host-monitoring"
 repository = "https://github.com/isarmg/host-monitoring.git"
-revision = "3cc2fdcc7bf0b6839795e196848e1a5c45bebe18"
+revision = "d80053fcd7edc924b2890784f50be3864e7e1585"
 package = "union-host-monitoring-worker"
 binary = "union-host-monitoring-worker"
 bundle = "host-monitoring-worker"

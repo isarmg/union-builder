@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "release_owner": "union-builder",
+  "clients": [
+    {
+      "id": "host-monitoring-agent",
+      "kind": "agent",
+      "version": "0.5.0",
+      "repository": "https://github.com/isarmg/host-monitoring.git",
+      "revision": "d80053fcd7edc924b2890784f50be3864e7e1585",
+      "assets": [
+        { "platform": "linux", "architecture": "amd64", "delivery": "unsigned-deb-rpm" },
+        { "platform": "linux", "architecture": "arm64", "delivery": "unsigned-deb-rpm" },
+        { "platform": "windows", "architecture": "amd64", "delivery": "unsigned-msi" },
+        { "platform": "macos", "architecture": "arm64", "delivery": "unsigned-pkg" },
+        { "platform": "android", "architecture": "arm64", "delivery": "embedded-rust-source-sdk" },
+        { "platform": "ios", "architecture": "arm64", "delivery": "embedded-rust-source-sdk" },
+        { "platform": "ipados", "architecture": "arm64", "delivery": "embedded-rust-source-sdk" }
+      ]
+    },
+    {
+      "id": "photo-backup-client",
+      "kind": "client",
+      "version": "0.2.0",
+      "repository": "https://github.com/isarmg/photo-backup.git",
+      "revision": "41c67959ff901cdc6c5caac3e678ea8430f0ec7c",
+      "assets": [
+        { "platform": "android", "architecture": "arm64", "delivery": "unsigned-release-apk" },
+        { "platform": "ios", "architecture": "arm64", "delivery": "unsigned-device-app-archive" },
+        { "platform": "ipados", "architecture": "arm64", "delivery": "unsigned-device-app-archive" }
+      ]
+    }
+  ]
+}

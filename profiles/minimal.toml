@@ -1,5 +1,5 @@
 # Official profile: Union Core and Web Shell, with no bundled business modules.
-# Immutable coordinated source graph for Builder 2.0.0.
+# Immutable coordinated source graph for Builder 2.1.0.
 schema_version = 2
 require_clean_sources = true
 
