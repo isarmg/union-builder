@@ -196,7 +196,7 @@ jobs:
             target\x86_64-pc-windows-msvc\release\unionc-agent-maintenance.exe `
             target\x86_64-pc-windows-msvc\release\unionc-agent-tray.exe
           if ($LASTEXITCODE -ne 0) { throw "MSI build failed" }
-          $packages = @(Get-ChildItem agent\packaging\windows\wix -Recurse -Filter *.msi)
+          $packages = @(Get-ChildItem agent\packaging\windows\wix\bin\x64\Release -File -Filter *.msi)
           if ($packages.Count -ne 1) { throw "Expected exactly one MSI, found $($packages.Count)" }
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item $packages[0].FullName `

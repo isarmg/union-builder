@@ -2617,6 +2617,13 @@ output = "dist"
 
         assert!(release.contains("repository: isarmg/photo-backup"));
         assert!(release.contains("ref: ${{ env.PHOTO_CLIENT_REVISION }}"));
+        assert!(release.contains(
+            "Get-ChildItem agent\\packaging\\windows\\wix\\bin\\x64\\Release -File -Filter *.msi"
+        ));
+        assert!(
+            !release
+                .contains("Get-ChildItem agent\\packaging\\windows\\wix -Recurse -Filter *.msi")
+        );
         assert!(release.contains("assembleRelease"));
         assert!(release.contains("CODE_SIGNING_ALLOWED=NO"));
         assert!(release.contains("not an APK/IPA"));
