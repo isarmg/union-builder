@@ -173,11 +173,14 @@ Builder Release 是 Union 模块 Agent/客户端的唯一官方发布面。模�
 
 - Host Monitoring Agent：Linux amd64/arm64 DEB/RPM、Windows amd64 MSI、macOS arm64 PKG；
   Android/iOS/iPadOS 发布的是可嵌入 Rust 源码 SDK，因为当前没有完整原生应用壳。
-- Photo Backup Client：Android arm64 未签名 release APK，以及同时面向 iPhone 和 iPad 的
+- Photo Backup Client：使用项目长期证书签名的 Android arm64 release APK，以及同时面向 iPhone 和 iPad 的
   未签名 device `.app` 归档。
 
-Linux DEB/RPM 未使用仓库签名；MSI、PKG、APK 和 Apple `.app` 也未使用平台发布证书。
-这些是可验证的构建制品或后续签名输入，不代表生产信任链、公证或应用商店可上架。
+Android APK 会在 Builder 内使用 Actions Secret 中的长期 PKCS#12 密钥签名，并对固定的
+SHA-256 证书指纹执行 `apksigner verify`；缺少密钥或指纹不符时发行直接失败。
+Linux DEB/RPM 未使用仓库签名，MSI、PKG 和 Apple `.app` 也未使用平台发布证书。
+Android 签名仅解决 PackageManager 安装与后续同证书升级身份，不代表生产信任链、
+公证、Play Store 可上架或真机兼容验收已完成。
 Release 中的 `COMPANION-ASSETS.json` 锁定每个客户端的仓库、revision、版本、平台和产物类型；
 `SHA256SUMS` 覆盖 Builder CLI 与全部集中发布产物。Dufs、Sentinel Monitor 和 Sunshine
 当前不存在独立 Agent/客户端，Builder 不伪造对应产物。

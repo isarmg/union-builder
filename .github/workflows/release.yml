@@ -13,6 +13,7 @@ env:
   HOST_AGENT_VERSION: 0.5.0
   PHOTO_CLIENT_REVISION: 41c67959ff901cdc6c5caac3e678ea8430f0ec7c
   PHOTO_CLIENT_VERSION: 0.2.0
+  PHOTO_ANDROID_CERT_SHA256: c952cb2769cfd2e137d75c3890ce21190babb004f95b15ac248fa774131f4bfa
 
 concurrency:
   group: release-${{ github.ref }}
@@ -309,8 +310,13 @@ jobs:
       - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
           gradle-version: "9.5.0"
-      - name: Build arm64 unsigned release APK
+      - name: Build and sign arm64 release APK
         shell: bash
+        env:
+          PHOTO_ANDROID_KEYSTORE_BASE64: ${{ secrets.PHOTO_ANDROID_KEYSTORE_BASE64 }}
+          PHOTO_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.PHOTO_ANDROID_KEYSTORE_PASSWORD }}
+          PHOTO_ANDROID_KEY_ALIAS: ${{ secrets.PHOTO_ANDROID_KEY_ALIAS }}
+          PHOTO_ANDROID_KEY_PASSWORD: ${{ secrets.PHOTO_ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$PHOTO_CLIENT_REVISION"
@@ -324,9 +330,33 @@ jobs:
           source_apk=android/app/build/outputs/apk/release/app-release-unsigned.apk
           test -f "$source_apk"
           unzip -l "$source_apk" | grep -F 'lib/arm64-v8a/libphoto_backup_mobile.so'
+          test -n "$PHOTO_ANDROID_KEYSTORE_BASE64"
+          test -n "$PHOTO_ANDROID_KEYSTORE_PASSWORD"
+          test -n "$PHOTO_ANDROID_KEY_ALIAS"
+          test -n "$PHOTO_ANDROID_KEY_PASSWORD"
           mkdir -p dist
-          cp "$source_apk" \
-            "dist/photo-backup-$PHOTO_CLIENT_VERSION-android-arm64-unsigned.apk"
+          keystore="$RUNNER_TEMP/photo-backup-android-release.p12"
+          printf '%s' "$PHOTO_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          chmod 600 "$keystore"
+          signed_apk="dist/photo-backup-$PHOTO_CLIENT_VERSION-android-arm64-signed.apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
+            --ks "$keystore" \
+            --ks-type PKCS12 \
+            --ks-key-alias "$PHOTO_ANDROID_KEY_ALIAS" \
+            --ks-pass env:PHOTO_ANDROID_KEYSTORE_PASSWORD \
+            --key-pass env:PHOTO_ANDROID_KEY_PASSWORD \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --v4-signing-enabled false \
+            --out "$signed_apk" \
+            "$source_apk"
+          signer_output="$("$ANDROID_HOME/build-tools/36.0.0/apksigner" \
+            verify --verbose --print-certs --min-sdk-version 26 "$signed_apk")"
+          printf '%s\n' "$signer_output"
+          signer_sha256="$(printf '%s\n' "$signer_output" \
+            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1)"
+          test "$signer_sha256" = "$PHOTO_ANDROID_CERT_SHA256"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: photo-backup-android-arm64
@@ -424,7 +454,7 @@ jobs:
           find . -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort > "$RUNNER_TEMP/actual-assets"
           printf '%s\n' \
             COMPANION-ASSETS.json \
-            photo-backup-0.2.0-android-arm64-unsigned.apk \
+            photo-backup-0.2.0-android-arm64-signed.apk \
             photo-backup-0.2.0-ios-ipados-arm64-unsigned-app.tar.gz \
             union-builder-linux-x86_64 \
             union-builder-macos-aarch64 \
@@ -471,4 +501,4 @@ jobs:
           sha256sum --check SHA256SUMS
           gh release create "$GITHUB_REF_NAME" ./* \
             --verify-tag --generate-notes --title "Union Builder ${GITHUB_REF_NAME#v}" \
-            --notes "Builder CLI and centrally published companion assets. Desktop Agent packages, Android APK and Apple app archive are unsigned; the Host mobile asset is an embedded Rust source SDK, not an APK/IPA. These assets are architecture/build milestones and are not production signing or store-readiness evidence."
+            --notes "Builder CLI and centrally published companion assets. The Photo Android APK is signed with the pinned project certificate; desktop Agent packages and the Apple app archive remain unsigned. The Host mobile asset is an embedded Rust source SDK, not an APK/IPA. Android signing makes the APK installable but does not establish Play Store readiness, platform notarization, or device compatibility certification."

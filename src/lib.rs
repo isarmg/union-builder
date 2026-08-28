@@ -2604,7 +2604,7 @@ output = "dist"
             "build-photo-android-client:",
             "build-photo-apple-client:",
             "validate-release-assets:",
-            "photo-backup-0.2.0-android-arm64-unsigned.apk",
+            "photo-backup-0.2.0-android-arm64-signed.apk",
             "photo-backup-0.2.0-ios-ipados-arm64-unsigned-app.tar.gz",
             "unionc-agent-mobile-sdk-0.5.0.tar.gz",
             "COMPANION-ASSETS.json",
@@ -2627,6 +2627,13 @@ output = "dist"
                 .contains("Get-ChildItem agent\\packaging\\windows\\wix -Recurse -Filter *.msi")
         );
         assert!(release.contains("assembleRelease"));
+        assert!(release.contains("PHOTO_ANDROID_KEYSTORE_BASE64"));
+        assert!(release.contains("apksigner\" sign"));
+        assert!(release.contains("verify --verbose --print-certs"));
+        assert!(release.contains("--ks-type PKCS12"));
+        assert!(
+            release.contains("c952cb2769cfd2e137d75c3890ce21190babb004f95b15ac248fa774131f4bfa")
+        );
         assert!(release.contains("CODE_SIGNING_ALLOWED=NO"));
         assert!(release.contains("not an APK/IPA"));
         assert!(!release.contains("photo-backup-0.2.0-ios-ipados-arm64.ipa"));

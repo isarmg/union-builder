@@ -25,7 +25,12 @@
       "repository": "https://github.com/isarmg/photo-backup.git",
       "revision": "41c67959ff901cdc6c5caac3e678ea8430f0ec7c",
       "assets": [
-        { "platform": "android", "architecture": "arm64", "delivery": "unsigned-release-apk" },
+        {
+          "platform": "android",
+          "architecture": "arm64",
+          "delivery": "signed-release-apk",
+          "signing_certificate_sha256": "c952cb2769cfd2e137d75c3890ce21190babb004f95b15ac248fa774131f4bfa"
+        },
         { "platform": "ios", "architecture": "arm64", "delivery": "unsigned-device-app-archive" },
         { "platform": "ipados", "architecture": "arm64", "delivery": "unsigned-device-app-archive" }
       ]

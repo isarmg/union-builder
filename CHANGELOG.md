@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.1.1 - 2026-08-28
+
+- Sign the centrally published Photo Backup Android APK with the long-lived project release
+  identity instead of publishing an Android package that PackageManager cannot install.
+- Require all four signing secrets, verify the APK with Android `apksigner`, and fail the release
+  before artifact upload when the signing identity is missing or does not match the pinned
+  certificate SHA-256 fingerprint.
+- Keep the Apple app and desktop Agent installers explicitly unsigned; Android signing does not
+  imply Play Store readiness, platform notarization, or device compatibility certification.
+
 ## 2.1.0 - 2026-08-28
 
 - Make Union Builder Releases the single official publication surface for module Agent and client
