@@ -33,13 +33,13 @@ Dufs 与 Sunshine 均为空。Host 的浏览器管理页使用另一条平台认
 因此 minimal 不能在运行时启用 Photo Backup；storage 可以启停 Photo Backup/Dufs，但不能凭空
 启用 Sentinel。增加或移除发行包含内容必须生成一个新的完整 Union 发行包。
 
-官方 profile 必须锁定完整 40 位 Git revision，并在发版前通过 `check`。同一 Union 源码中的
-Core、Sunshine 和 Host Monitoring 必须锁定同一 revision。数据库 URL、凭据、存储目录和设备
-地址属于运行配置，不进入 profile。
+官方 profile 必须为每个独立源码仓库锁定完整 40 位 Git revision，并在发版前通过 `check`。
+Core/Web Shell 来自 `union-rust`，Sunshine 与 Host Monitoring 分别来自 `sunshine-worker` 和
+`host-monitoring`；数据库 URL、凭据、存储目录和设备地址属于运行配置，不进入 profile。
 
-Builder 2.0.0 的四个官方 profile 已锁定协调完成的 Union、Dufs、Photo Backup 和 Sentinel
-Monitor 完整 revision；同仓 Sunshine、Host Monitoring 与 Core 共享同一 Union revision。任何后续
-发布都必须先更新相应 revision，并让 CI 的四个官方 profile `check` 全部通过。Release workflow
+Builder 2.0.0 的四个官方 profile 已分别锁定协调完成的 Union、Dufs、Photo Backup、Sentinel
+Monitor、Sunshine 和 Host Monitoring 完整 revision。任何后续发布都必须先更新相应 revision，
+并让 CI 的四个官方 profile `check` 全部通过。Release workflow
 还会拒绝残留 `TODO(release)` 的 profile，避免把迁移期占位配置发布为正式发行。
 
 Actions 可用 `profile: minimal|storage|monitoring|full` 选择官方文件，或通过 `config` 使用调用
@@ -49,8 +49,9 @@ Actions 可用 `profile: minimal|storage|monitoring|full` 选择官方文件，�
 当 `isarmg/union-rust` 通过 reusable workflow 构建自身提交时，调用方必须显式传入
 `materialize-caller-source: true`、`caller-revision: ${{ github.sha }}` 和完整 40 位
 `builder-revision`。workflow 同时校验调用仓库与 caller SHA，再用 `materialize` 生成邻接临时
-profile；Builder 自身 workflow 和 dispatch 固定使用自己的 `github.sha`。该机制只替换 Union
-同仓条目的 source/revision，不改变 profile 定义的包含集合，也不允许其他调用仓库借此注入源码。
+profile；Builder 自身 workflow 和 dispatch 固定使用自己的 `github.sha`。当前官方 profile 只会
+替换 distribution 的 source/revision；通用实现仍会原子替换自定义 profile 中与 Union 仓库身份
+完全相同的条目。它不改变 profile 定义的包含集合，也不允许其他调用仓库借此注入源码。
 为保证正式 pin 和相对路径语义可审计，workflow 启用物化时只接受 Builder 官方 `profile`，拒绝
 调用仓库自带的 `config`。
 

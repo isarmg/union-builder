@@ -47,9 +47,11 @@ Field ownership:
 | module `manifest.json` | Runtime contract and all module contributions | Source revision or runtime enabled state |
 | `union-release.json` | Exact included packages and dependency activation order | Database state or enable/disable state |
 
-Every revision is a non-zero canonical lowercase 40-character Git object ID. When Core/Web Shell and
-modules come from the official Union repository, schema validation requires one identical revision
-for all of them; caller materialization updates that set atomically.
+Every revision is a non-zero canonical lowercase 40-character Git object ID. If a custom composition
+intentionally references modules from the official Union repository, schema validation requires those
+entries to use the same revision as Core/Web Shell and caller materialization updates that set atomically.
+The official profiles do not use that layout: Sunshine and Host Monitoring have independent repositories
+and revisions.
 
 The module `binary` names the Cargo artifact. Its install base name is taken from the validated source
 Manifest `execution.executable`; this deliberately supports renaming, for example
@@ -82,9 +84,10 @@ union-builder materialize \
 ```
 
 The repository is an exact identity, not a URL prefix: only the official credential-free Union GitHub URL is
-accepted. The distribution must match it, and every module with that same repository (currently Sunshine and
-Host Monitoring) is redirected to the same verified worktree and revision. Dufs, Photo Backup, Sentinel and
-future other-repository entries stay unchanged, and no module is added or removed.
+accepted. The distribution must match it. Any custom-profile module using that exact same repository is also
+redirected to the verified worktree and revision, but current official profiles contain no such module, so
+their materialization count is one. Sunshine, Host Monitoring, Dufs, Photo Backup and Sentinel stay pinned to
+their independent repositories, and no module is added or removed.
 
 The source must be a real directory at the Git worktree root; its `HEAD` must equal the supplied full revision.
 Builder serializes and re-parses strict schema v2, writes a temporary file in the output directory, fsyncs it

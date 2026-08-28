@@ -21,7 +21,11 @@
   rollback never rolls back module databases or stored data.
 - Keep GitHub Actions as a thin CLI caller and keep modules out of independent public releases.
 - Add an auditable `materialize` command and explicit reusable-workflow opt-in that bind Union-owned
-  profile entries to the verified `isarmg/union-rust` caller SHA without creating a final-SHA cycle.
+  profile entries to the verified `isarmg/union-rust` caller SHA without creating a final-SHA cycle;
+  official profiles now materialize only the Core/Web distribution because Sunshine and Host
+  Monitoring are pinned from their own repositories.
+- Pin Sunshine and Host Monitoring as independently versioned module sources while retaining their
+  existing Cargo artifacts and bundle layouts.
 - Require external reusable-workflow callers to pin the Builder checkout with an explicit full
   `builder-revision`; Builder self-runs use `github.sha` and never resolve source from a movable tag.
 - Replace the blanket platform-auth route policy with a deny-by-default, exact-ID

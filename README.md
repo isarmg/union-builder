@@ -25,8 +25,9 @@ Core，也不是从公网任意下载代码的插件市场。
 
 ## 模块源模板
 
-每个独立模块仓库在项目根提供 bundle 元数据；Union 仓库内的 Sunshine/Host worker 则以各自
-worker 根为 bundle。Builder 只复制下列 Manifest 声明的白名单，不会复制 `src/`、`.git/`、
+每个独立模块仓库在项目根或 profile 指定的 bundle 子目录提供元数据。Sunshine 的 bundle 位于
+仓库根，Host Monitoring 的 bundle 位于 `host-monitoring-worker/`。Builder 只复制下列 Manifest
+声明的白名单，不会复制 `src/`、`.git/`、
 `target/`、mobile、docs 或其他源码内容：
 
 ```text
@@ -74,8 +75,9 @@ union-builder verify --release dist/full
 
 `materialize` 专用于可复用 Actions 中的 Union 调用方构建：它验证调用方路径确为 Git worktree
 根、`HEAD` 等于显式 40 位 revision，并要求 repository 精确等于
-`https://github.com/isarmg/union-rust.git`。随后只把 distribution 以及同仓的 Sunshine/Host 条目
-改指向该 checkout；模块包含集合、其他仓库条目、版本、包名和 binary 均保持不变。输出会重新
+`https://github.com/isarmg/union-rust.git`。当前官方 profile 中只有 distribution 指向该仓库，
+因此只把 Core/Web Shell 改指向调用方 checkout；Sunshine、Host Monitoring 和其他模块继续使用
+各自独立仓库的不可变 revision。模块包含集合、版本、包名和 binary 均保持不变。输出会重新
 通过 strict schema v2 解析与校验，采用原子发布且拒绝覆盖。该命令不会修改正式 profile，因此
 打破的是发布编排的最终 SHA 循环，而不是放宽源码身份校验。
 

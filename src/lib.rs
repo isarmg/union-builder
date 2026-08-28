@@ -2421,7 +2421,7 @@ output = "dist"
     }
 
     #[test]
-    fn caller_materialization_rewrites_only_exact_union_repository_entries() {
+    fn official_caller_materialization_rewrites_only_distribution() {
         let mut config = sample_union_config();
         let included_before = config
             .modules
@@ -2434,6 +2434,8 @@ output = "dist"
             .map(|module| {
                 (
                     module.id.clone(),
+                    module.source.clone(),
+                    module.revision.clone(),
                     module.package.clone(),
                     module.binary.clone(),
                     module.bundle.clone(),
@@ -2442,12 +2444,6 @@ output = "dist"
                 )
             })
             .collect::<Vec<_>>();
-        let photo_before = config
-            .modules
-            .iter()
-            .find(|module| module.id == "photo-backup")
-            .map(|module| (module.source.clone(), module.revision.clone()))
-            .unwrap();
         let distribution_identity = (
             config.distribution.name.clone(),
             config.distribution.version.clone(),
@@ -2465,7 +2461,7 @@ output = "dist"
         )
         .unwrap();
 
-        assert_eq!(matched, 3);
+        assert_eq!(matched, 1);
         assert_eq!(config.distribution.source, caller_source);
         assert_eq!(config.distribution.revision, caller_revision);
         assert_eq!(
@@ -2477,21 +2473,6 @@ output = "dist"
             ),
             distribution_identity
         );
-        for id in ["sunshine", "host-monitoring"] {
-            let module = config
-                .modules
-                .iter()
-                .find(|module| module.id == id)
-                .unwrap();
-            assert_eq!(module.source, caller_source);
-            assert_eq!(module.revision, caller_revision);
-        }
-        let photo = config
-            .modules
-            .iter()
-            .find(|module| module.id == "photo-backup")
-            .unwrap();
-        assert_eq!((photo.source.clone(), photo.revision.clone()), photo_before);
         assert_eq!(
             config
                 .modules
@@ -2507,6 +2488,8 @@ output = "dist"
                 .map(|module| {
                     (
                         module.id.clone(),
+                        module.source.clone(),
+                        module.revision.clone(),
                         module.package.clone(),
                         module.binary.clone(),
                         module.bundle.clone(),
@@ -2522,6 +2505,41 @@ output = "dist"
         let round_trip: BuildConfig = toml::from_str(&rendered).unwrap();
         validate_config(&round_trip).unwrap();
         assert_eq!(round_trip.modules.len(), included_before.len());
+    }
+
+    #[test]
+    fn caller_materialization_keeps_generic_same_repository_support() {
+        let mut config = sample_union_config();
+        config.modules.push(Module {
+            id: "future-module".into(),
+            source: "union-rust".into(),
+            repository: Some(OFFICIAL_UNION_REPOSITORY.into()),
+            revision: config.distribution.revision.clone(),
+            package: "future-module-worker".into(),
+            binary: "future-module-worker".into(),
+            bundle: "future-module".into(),
+            module_auth_routes: Vec::new(),
+            frontend: None,
+        });
+        let caller_source = Path::new("/workspaces/union-rust");
+        let caller_revision = "c".repeat(40);
+
+        let matched = materialize_config_for_caller(
+            &mut config,
+            OFFICIAL_UNION_REPOSITORY,
+            caller_source,
+            &caller_revision,
+        )
+        .unwrap();
+
+        assert_eq!(matched, 2);
+        let module = config
+            .modules
+            .iter()
+            .find(|module| module.id == "future-module")
+            .unwrap();
+        assert_eq!(module.source, caller_source);
+        assert_eq!(module.revision, caller_revision);
     }
 
     #[test]
@@ -2633,7 +2651,7 @@ output = "dist"
             &output,
         )
         .unwrap();
-        assert_eq!(result.matched_entries, 3);
+        assert_eq!(result.matched_entries, 1);
         assert_eq!(result.output, output);
         let emitted: BuildConfig = toml::from_str(&fs::read_to_string(&output).unwrap()).unwrap();
         validate_config(&emitted).unwrap();
@@ -2675,7 +2693,11 @@ output = "dist"
                 .to_string()
                 .contains("canonical lowercase")
         );
-        config.modules[1].revision = "b".repeat(40);
+
+        let mut config = sample_config();
+        config.distribution.repository = Some(OFFICIAL_UNION_REPOSITORY.into());
+        config.modules[0].id = "future-module".into();
+        config.modules[0].repository = Some(OFFICIAL_UNION_REPOSITORY.into());
         assert!(
             validate_config(&config)
                 .unwrap_err()
@@ -3106,15 +3128,21 @@ output = "dist"
         let mut config = sample_config();
         config.distribution.repository = Some(OFFICIAL_UNION_REPOSITORY.into());
         config.modules[0].repository = Some("https://github.com/isarmg/photo-backup.git".into());
-        for (id, package, binary, bundle) in [
+        for (id, source, repository, revision, package, binary, bundle) in [
             (
                 "sunshine",
-                "unionc-sunshine-worker",
-                "unionc-sunshine-worker",
                 "sunshine-worker",
+                "https://github.com/isarmg/sunshine-worker.git",
+                "c".repeat(40),
+                "unionc-sunshine-worker",
+                "unionc-sunshine-worker",
+                ".",
             ),
             (
                 "host-monitoring",
+                "host-monitoring",
+                "https://github.com/isarmg/host-monitoring.git",
+                "d".repeat(40),
                 "union-host-monitoring-worker",
                 "union-host-monitoring-worker",
                 "host-monitoring-worker",
@@ -3122,9 +3150,9 @@ output = "dist"
         ] {
             config.modules.push(Module {
                 id: id.into(),
-                source: "union-rust".into(),
-                repository: Some(OFFICIAL_UNION_REPOSITORY.into()),
-                revision: "a".repeat(40),
+                source: source.into(),
+                repository: Some(repository.into()),
+                revision,
                 package: package.into(),
                 binary: binary.into(),
                 bundle: bundle.into(),

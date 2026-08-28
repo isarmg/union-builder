@@ -6,8 +6,8 @@ Builder 2.0 的文件事务单位是 Core、Web Shell 和所选模块包组成�
 ## 发布前门禁
 
 1. 锁定每个源码的完整 Git revision；相同仓库条目使用同一 revision。Union 调用方构建应保存
-   `materialize` 输出作为证据；distribution、Sunshine、Host 必须同时等于 workflow 的
-   `github.sha`，其他仓库 pin 与包含集合必须保持原 profile 值。
+   `materialize` 输出作为证据；当前官方 profile 只要求 distribution 等于 workflow 的
+   `github.sha`，Sunshine、Host Monitoring 与其他独立仓库 pin 及包含集合必须保持原 profile 值。
 2. 对 profile 执行 `check` 和 `plan --format json`，保存 plan 作为审计证据。
 3. `check` 必须通过 Manifest v1、权限/config/version 一致性、平台兼容、完整依赖图，以及
    `module_auth_routes` 与 Manifest 模块认证路由集合的精确一致性校验。
