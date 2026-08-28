@@ -8,6 +8,11 @@
 
 - Core 和 Web Shell 各构建一次。Builder 不向 Core 传递任何业务 Cargo feature；Core 的 Cargo
   graph 本身不得包含业务模块代码。Web Shell 只提供认证、导航、权限门控和动态模块加载能力。
+- Union **server distribution** 只支持 `linux-amd64` 与 `linux-arm64`。正式发行分别在固定的
+  `ubuntu-24.04` x64 和 `ubuntu-24.04-arm` arm64 GitHub-hosted runner 原生构建，映射到
+  `x86_64-unknown-linux-gnu` 与 `aarch64-unknown-linux-gnu`；Windows、macOS 和移动平台不是
+  server target。`union-builder` 辅助 CLI 自身仍可单独发布 Linux、Windows 和 macOS 版本，
+  不能把 CLI 的宿主平台矩阵误认为 Union Server 支持矩阵。
 - 每个选中的模块 Backend 独立编译为私有 worker，并与该模块的 Manifest、权限、配置 Schema、
   版本元数据、Frontend 和 Migration 组装为 `modules/<id>` 包。
 - 模块只允许 `process` execution、loopback bind，Backend service 必须具有 platform visibility，
@@ -56,18 +61,24 @@ Builder 从 profile 锁定的 revision 生成最终 `version.json`，并同时�
 ```bash
 cargo install --path . --locked
 
-union-builder check --config profiles/full.toml
-union-builder plan --config profiles/full.toml
-union-builder plan --config profiles/full.toml --format json
+union-builder check --config profiles/full.toml --server-target linux-amd64
+union-builder plan --config profiles/full.toml --server-target linux-amd64
+union-builder plan --config profiles/full.toml --server-target linux-arm64 --format json
 union-builder materialize \
   --config profiles/full.toml \
   --caller-repository https://github.com/isarmg/union-rust.git \
   --caller-source /absolute/path/to/union-rust \
   --caller-revision <full-40-character-git-id> \
   --output profiles/full.materialized.toml
-union-builder build --config profiles/full.toml --cargo-profile release
-union-builder verify --release dist/full
+union-builder build --config profiles/full.toml --cargo-profile release \
+  --server-target linux-amd64
+union-builder verify --release dist/full --server-target linux-amd64
 ```
+
+`--server-target` 只接受 `linux-amd64` 或 `linux-arm64`。本地省略时，Builder 仅可从 Linux
+`x86_64`/`aarch64` host 推导；正式 workflow 必须显式传值。`check` 和 `plan` 把选择的 target
+纳入输出，`build` 始终向 Cargo 传对应 GNU triple，`verify --server-target` 同时复验制品声明。
+组合 TOML 保持架构中立，因此同一个不可变 profile 可生成两种 server distribution。
 
 `check` 在编译前验证完整源码身份、许可证、bundle 文件、Manifest 语义、依赖拓扑和平台兼容性。
 本地 source 不存在时，只能从无凭据 GitHub HTTPS URL 获取完整 40 位 revision。正式 profile
@@ -88,10 +99,17 @@ union-builder verify --release dist/full
 uses: isarmg/union-builder/.github/workflows/build-union.yml@0123456789abcdef0123456789abcdef01234567
 with:
   profile: full
+  server-target: linux-amd64
+  artifact-name-prefix: union-full
   builder-revision: 0123456789abcdef0123456789abcdef01234567
   materialize-caller-source: true
   caller-revision: ${{ github.sha }}
 ```
+
+可复用 workflow 的 `server-target` 是必填输入。它输出 `server-target`、`rust-target`、
+`artifact-name` 与 `archive-name`：以上例实际 artifact 为 `union-full-linux-amd64`，其中的文件
+为 `union-distribution-linux-amd64.tar`，tar 根目录固定为 `union-distribution/`。目标后缀由
+workflow 生成，两个架构不会因调用方复用前缀而互相覆盖。
 
 Builder 仓库自身的 workflow call 和手工 dispatch 不接受另一个源码 pin，始终使用当前
 `github.sha`。
@@ -116,6 +134,10 @@ dist/full/
 └── SHA256SUMS
 ```
 
+`union-release.json` 的 schema v2 在 `distribution` 中必填 `platform: "linux"` 和
+`architecture: "amd64"|"arm64"`。这两个字段属于发行身份并进入 checksum；Builder 不接受
+Windows、macOS、iOS、iPadOS 或 Android server distribution。
+
 `verify` 会再次运行 Manifest/依赖/兼容校验，检查 identity、version、source revision、必需文件、
 可执行位、所有 bundle 引用、无符号链接/路径逃逸，以及 `SHA256SUMS` 与实际文件集合完全一致；
 文件数、单文件/总字节、路径长度和目录深度均有上限，防止恶意包造成无界扫描。
@@ -130,9 +152,9 @@ union-builder install --release dist/full --root /opt/union
 union-builder rollback --root /opt/union
 ```
 
-Unix 上，`stage` 写入不可变 `releases/<release-id>` slot；`install` 原子切换相对 `current` 符号
-链接；`rollback` 切回 previous slot。Windows 支持构建、验证和 staging，但激活需由平台安装器
-处理。
+受支持的 Linux Server 上，`stage` 写入不可变 `releases/<release-id>` slot；`install` 原子切换
+相对 `current` 符号链接；`rollback` 切回 previous slot。Builder CLI 可在 Windows/macOS 运行，
+用于配置审查或离线验证，但不会由此产生 Windows/macOS Union Server 支持承诺。
 
 重要边界：Builder 回滚的只是发行文件与指针，**不回滚数据库 Migration、模块数据库、媒体或
 其他业务数据**。详见 [Release lifecycle](docs/RELEASE-LIFECYCLE.md)。

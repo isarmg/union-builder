@@ -31,6 +31,13 @@
 - Replace the blanket platform-auth route policy with a deny-by-default, exact-ID
   `module_auth_routes` allowlist for non-browser device-token and short-lived media flows, persisted
   into the release manifest and rechecked by offline verification.
+- Restrict Union server distributions to native Linux amd64/arm64 builds, record mandatory
+  `platform` and `architecture` identity in schema-v2 release manifests, and reject every other
+  server target during build and verification.
+- Add target-aware reusable-workflow inputs/outputs and collision-free architecture-qualified
+  artifact/archive names; validate the full profile on fixed native x64 and arm64 Ubuntu runners.
+- Keep the Union Builder helper CLI's Linux, Windows and macOS releases separate from the narrower
+  Union Server support matrix.
 
 ## 1.0.0 - 2026-08-27
 

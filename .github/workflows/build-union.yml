@@ -3,6 +3,10 @@ name: Build Union Distribution
 on:
   workflow_call:
     inputs:
+      server-target:
+        description: Union server distribution target (linux-amd64 or linux-arm64)
+        required: true
+        type: string
       config:
         description: Caller-relative custom manifest; mutually exclusive with profile
         required: false
@@ -13,8 +17,8 @@ on:
         required: false
         default: ""
         type: string
-      artifact-name:
-        description: Uploaded artifact name
+      artifact-name-prefix:
+        description: Prefix for the target-qualified uploaded artifact name
         required: false
         default: union-distribution
         type: string
@@ -33,8 +37,29 @@ on:
         required: false
         default: ""
         type: string
+    outputs:
+      server-target:
+        description: Validated logical Linux server target
+        value: ${{ jobs.build.outputs.server_target }}
+      rust-target:
+        description: Rust GNU target compiled natively by the selected runner
+        value: ${{ jobs.build.outputs.rust_target }}
+      artifact-name:
+        description: Target-qualified uploaded artifact name
+        value: ${{ jobs.build.outputs.artifact_name }}
+      archive-name:
+        description: Target-qualified tar file inside the artifact
+        value: ${{ jobs.build.outputs.archive_name }}
   workflow_dispatch:
     inputs:
+      server-target:
+        description: Union Linux server distribution target
+        required: true
+        default: linux-amd64
+        type: choice
+        options:
+          - linux-amd64
+          - linux-arm64
       config:
         description: Repository-relative custom manifest; select custom below when using this
         required: false
@@ -51,8 +76,8 @@ on:
           - storage
           - monitoring
           - custom
-      artifact-name:
-        description: Uploaded artifact name
+      artifact-name-prefix:
+        description: Prefix for the target-qualified uploaded artifact name
         required: true
         default: union-distribution
         type: string
@@ -72,8 +97,49 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs['server-target'] == 'linux-arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    outputs:
+      server_target: ${{ steps.server_target.outputs.server_target }}
+      rust_target: ${{ steps.server_target.outputs.rust_target }}
+      artifact_name: ${{ steps.server_target.outputs.artifact_name }}
+      archive_name: ${{ steps.server_target.outputs.archive_name }}
     steps:
+      - name: Resolve and prove the native Linux server target
+        id: server_target
+        shell: bash
+        env:
+          SERVER_TARGET: ${{ inputs['server-target'] }}
+          ARTIFACT_NAME_PREFIX: ${{ inputs['artifact-name-prefix'] }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$ARTIFACT_NAME_PREFIX" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+            echo "artifact-name-prefix must contain only letters, digits, dot, underscore and hyphen" >&2
+            exit 2
+          fi
+          case "$SERVER_TARGET" in
+            linux-amd64)
+              expected_machine=x86_64
+              rust_target=x86_64-unknown-linux-gnu
+              ;;
+            linux-arm64)
+              expected_machine=aarch64
+              rust_target=aarch64-unknown-linux-gnu
+              ;;
+            *)
+              echo "unsupported Union server target: $SERVER_TARGET" >&2
+              exit 2
+              ;;
+          esac
+          if [[ "$(uname -s)" != Linux || "$(uname -m)" != "$expected_machine" ]]; then
+            echo "server distributions must be assembled on their native Linux architecture" >&2
+            exit 2
+          fi
+
+          echo "server_target=$SERVER_TARGET" >> "$GITHUB_OUTPUT"
+          echo "rust_target=$rust_target" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=$ARTIFACT_NAME_PREFIX-$SERVER_TARGET" >> "$GITHUB_OUTPUT"
+          echo "archive_name=union-distribution-$SERVER_TARGET.tar" >> "$GITHUB_OUTPUT"
       - name: Check out composition repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -238,21 +304,23 @@ jobs:
         run: >-
           tool/target/release/union-builder build
           --config "${{ steps.materialization.outputs.config }}"
+          --server-target "${{ steps.server_target.outputs.server_target }}"
           --output "$RUNNER_TEMP/union-distribution"
       - name: Verify and wrap the distribution without losing Unix modes
         shell: bash
         run: |
           set -euo pipefail
           tool/target/release/union-builder verify \
-            --release "$RUNNER_TEMP/union-distribution"
+            --release "$RUNNER_TEMP/union-distribution" \
+            --server-target "${{ steps.server_target.outputs.server_target }}"
           tar --sort=name \
             --mtime='UTC 1970-01-01' \
             --owner=0 --group=0 --numeric-owner \
-            -cf "$RUNNER_TEMP/union-distribution.tar" \
+            -cf "$RUNNER_TEMP/${{ steps.server_target.outputs.archive_name }}" \
             -C "$RUNNER_TEMP" union-distribution
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ${{ inputs['artifact-name'] }}
+          name: ${{ steps.server_target.outputs.artifact_name }}
           # upload-artifact's ZIP transport does not preserve executable bits. The inner tar does.
-          path: ${{ runner.temp }}/union-distribution.tar
+          path: ${{ runner.temp }}/${{ steps.server_target.outputs.archive_name }}
           if-no-files-found: error

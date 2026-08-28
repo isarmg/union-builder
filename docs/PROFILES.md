@@ -3,6 +3,10 @@
 所有 profile 都构建同一套 Union Core 和动态 Web Shell。差异只在最终发行目录预装哪些完整模块
 包，不涉及 Core Cargo feature，也不代表模块运行时已启用。
 
+Profile 本身保持架构中立；每个 profile 只允许生成 `linux-amd64` 和 `linux-arm64` 两种 Server
+发行。正式门禁必须对两个 target 分别执行 `check`、`plan`、完整 build 和 verify。Builder CLI
+自身可发布到 Windows/macOS，但这些只是构建辅助工具，不属于 Union Server 的支持平台。
+
 | 模块 | minimal | storage | monitoring | full |
 |---|---:|---:|---:|---:|
 | Photo Backup | — | ✓ | — | ✓ |
@@ -44,7 +48,8 @@ Monitor、Sunshine 和 Host Monitoring 完整 revision。任何后续发布都�
 
 Actions 可用 `profile: minimal|storage|monitoring|full` 选择官方文件，或通过 `config` 使用调用
 仓库内的自定义文件；二者互斥。最终 workflow 只调用 Builder CLI 并上传一个保留 Unix mode 的
-完整 distribution tar，不发布模块单独 artifact 或 public Release。
+完整 distribution tar，不发布模块单独 artifact 或 public Release。artifact 名与 tar 文件名
+自动附加 `linux-amd64` 或 `linux-arm64`，tar 内根目录统一为 `union-distribution/`。
 
 当 `isarmg/union-rust` 通过 reusable workflow 构建自身提交时，调用方必须显式传入
 `materialize-caller-source: true`、`caller-revision: ${{ github.sha }}` 和完整 40 位
@@ -60,9 +65,14 @@ Union 调用方示例：
 ```yaml
 jobs:
   distribution:
+    strategy:
+      matrix:
+        server_target: [linux-amd64, linux-arm64]
     uses: isarmg/union-builder/.github/workflows/build-union.yml@0123456789abcdef0123456789abcdef01234567
     with:
       profile: full
+      server-target: ${{ matrix.server_target }}
+      artifact-name-prefix: union-full
       builder-revision: 0123456789abcdef0123456789abcdef01234567
       materialize-caller-source: true
       caller-revision: ${{ github.sha }}
@@ -71,6 +81,10 @@ jobs:
 `uses@...` 与 `builder-revision` 必须是同一个受信任 Builder 完整 SHA；禁止 branch、tag、短 SHA
 或两处指向不同提交。物化只解决 profile 无法预知调用方最终 SHA 的单向引用，不允许 Union 选择
 另一个 Builder 源码或跳过 Builder 的 package 校验。
+
+可复用 workflow 暴露 `server-target`、`rust-target`、`artifact-name`、`archive-name` 四个输出。
+输入 `artifact-name-prefix` 不能伪造或省略 target 后缀；workflow 会统一生成，因此同一次 matrix
+的两个架构不会上传同名 artifact。
 
 CLI 的 `--cargo-profile debug|release` 只控制 Rust artifact 优化级别，特意采用不同名称；它不
 改变上述发行包含集合，也不能启用 Cargo 业务 feature。

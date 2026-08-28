@@ -8,11 +8,14 @@ Builder 2.0 的文件事务单位是 Core、Web Shell 和所选模块包组成�
 1. 锁定每个源码的完整 Git revision；相同仓库条目使用同一 revision。Union 调用方构建应保存
    `materialize` 输出作为证据；当前官方 profile 只要求 distribution 等于 workflow 的
    `github.sha`，Sunshine、Host Monitoring 与其他独立仓库 pin 及包含集合必须保持原 profile 值。
-2. 对 profile 执行 `check` 和 `plan --format json`，保存 plan 作为审计证据。
+2. 对 profile 的 `linux-amd64`、`linux-arm64` 分别执行带显式 `--server-target` 的 `check` 和
+   `plan --format json`，保存两份 plan 作为审计证据。
 3. `check` 必须通过 Manifest v1、权限/config/version 一致性、平台兼容、完整依赖图，以及
    `module_auth_routes` 与 Manifest 模块认证路由集合的精确一致性校验。
-4. 执行 `build`；不得向输出目录手工追加或替换文件。
-5. 在交付端和目标主机分别执行 `verify`。
+4. 在 `ubuntu-24.04` x64 与 `ubuntu-24.04-arm` arm64 原生 runner 分别执行 `build`；不得向输出
+   目录手工追加或替换文件，也不得把 Builder CLI 的 Windows/macOS artifact 当作 Server。
+5. 在交付端和目标主机分别执行带预期 `--server-target` 的 `verify`。release manifest 的
+   `distribution.platform` 必须为 `linux`，`architecture` 必须为 `amd64` 或 `arm64`。
 
 `SHA256SUMS` 是精确文件清单：缺失、篡改、额外文件、符号链接、非普通文件或丢失可执行位都
 会失败。SHA-256 不是发布者签名，发行包仍须通过受信任 TLS/Release 渠道或外层制品签名获取。

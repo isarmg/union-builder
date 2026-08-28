@@ -1,6 +1,9 @@
 schema_version = 2
 require_clean_sources = true
 
+# Composition files are target-neutral. Select linux-amd64 or linux-arm64 with the CLI's
+# --server-target option; Windows and Apple server distributions are unsupported.
+
 # Replace all-zero revisions before use. A profile selects what the release contains; it never
 # selects Cargo features and it does not imply that a bundled module is enabled at runtime.
 [distribution]

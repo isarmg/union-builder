@@ -8,6 +8,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
+use clap::ValueEnum;
 use sarmg_platform_core::{
     Execution, MigrationEngine, PLATFORM_API_VERSION, PLUGIN_API_VERSION, PermissionDefinition,
     PlatformVersions, PluginCatalog, PluginManifest, ReleaseChannel, RouteAuth, ServiceVisibility,
@@ -129,8 +130,77 @@ pub struct SourceIdentity {
 pub struct BuildOptions {
     /// Cargo artifact profile. Release composition is selected only by the config file.
     pub cargo_profile: String,
-    pub target: Option<String>,
+    /// Linux server distribution target. If omitted, Builder derives it from a supported Linux
+    /// host; release workflows should always pass it explicitly.
+    pub server_target: Option<ServerTarget>,
     pub output: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ValueEnum)]
+#[serde(rename_all = "kebab-case")]
+pub enum ServerTarget {
+    #[value(name = "linux-amd64")]
+    LinuxAmd64,
+    #[value(name = "linux-arm64")]
+    LinuxArm64,
+}
+
+impl ServerTarget {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::LinuxAmd64 => "linux-amd64",
+            Self::LinuxArm64 => "linux-arm64",
+        }
+    }
+
+    pub const fn platform(self) -> &'static str {
+        "linux"
+    }
+
+    pub const fn architecture(self) -> &'static str {
+        match self {
+            Self::LinuxAmd64 => "amd64",
+            Self::LinuxArm64 => "arm64",
+        }
+    }
+
+    pub const fn rust_target(self) -> &'static str {
+        match self {
+            Self::LinuxAmd64 => "x86_64-unknown-linux-gnu",
+            Self::LinuxArm64 => "aarch64-unknown-linux-gnu",
+        }
+    }
+
+    fn from_release_fields(platform: &str, architecture: &str) -> Result<Self> {
+        match (platform, architecture) {
+            ("linux", "amd64") => Ok(Self::LinuxAmd64),
+            ("linux", "arm64") => Ok(Self::LinuxArm64),
+            _ => anyhow::bail!(
+                "unsupported server distribution target {platform}/{architecture}; supported targets are linux/amd64 and linux/arm64"
+            ),
+        }
+    }
+}
+
+impl std::fmt::Display for ServerTarget {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.name())
+    }
+}
+
+/// Resolve an omitted local target from the host. Union server distributions are Linux-only;
+/// Windows and Apple Builder CLIs must pass an explicit Linux cross-build target.
+pub fn resolve_server_target(target: Option<ServerTarget>) -> Result<ServerTarget> {
+    if let Some(target) = target {
+        return Ok(target);
+    }
+    match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("linux", "x86_64") => Ok(ServerTarget::LinuxAmd64),
+        ("linux", "aarch64") => Ok(ServerTarget::LinuxArm64),
+        (platform, architecture) => anyhow::bail!(
+            "cannot infer a supported Union server target from {platform}/{architecture}; pass --server-target linux-amd64 or --server-target linux-arm64"
+        ),
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -138,6 +208,7 @@ pub struct BuildResult {
     pub output: PathBuf,
     pub manifest: PathBuf,
     pub checksums: PathBuf,
+    pub server_target: ServerTarget,
 }
 
 #[derive(Debug, Clone)]
@@ -158,6 +229,7 @@ pub struct VerificationResult {
     pub release: PathBuf,
     pub release_id: String,
     pub files: usize,
+    pub server_target: ServerTarget,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -330,6 +402,9 @@ struct PlanTarget<'a> {
     binary: &'a str,
     frontend: &'a Frontend,
     install_path: String,
+    platform: &'static str,
+    architecture: &'static str,
+    rust_target: &'static str,
 }
 
 #[derive(Debug, Serialize)]
@@ -358,6 +433,8 @@ struct ReleaseDistribution<'a> {
     name: &'a str,
     version: &'a str,
     revision: &'a str,
+    platform: &'static str,
+    architecture: &'static str,
     executable: String,
     web_shell: String,
 }
@@ -387,6 +464,8 @@ struct StoredReleaseDistribution {
     name: String,
     version: String,
     revision: String,
+    platform: String,
+    architecture: String,
     executable: String,
     web_shell: String,
 }
@@ -638,7 +717,7 @@ fn check_module_package(module: &Module) -> Result<CheckedModulePackage> {
         !process_executable(&manifest)?
             .to_ascii_lowercase()
             .ends_with(".exe"),
-        "module {} source executable must omit the target-specific .exe suffix",
+        "module {} source executable must omit the Windows .exe suffix",
         module.id
     );
     validate_permissions_file(&root, &manifest)?;
@@ -1184,18 +1263,30 @@ fn run(command: &mut Command) -> Result<()> {
     Ok(())
 }
 
-pub fn render_plan(checked: &CheckedConfig, format: OutputFormat) -> Result<String> {
-    let plan = make_plan(checked);
+pub fn render_plan(
+    checked: &CheckedConfig,
+    server_target: Option<ServerTarget>,
+    format: OutputFormat,
+) -> Result<String> {
+    let server_target = resolve_server_target(server_target)?;
+    let plan = make_plan(checked, server_target);
     match format {
         OutputFormat::Json => Ok(serde_json::to_string_pretty(&plan)?),
         OutputFormat::Text => {
-            let mut lines = vec![format!(
-                "core {} {}: build Cargo package {} once -> {}",
-                plan.distribution.name,
-                plan.distribution.version,
-                plan.distribution.package,
-                plan.distribution.install_path
-            )];
+            let mut lines = vec![
+                format!(
+                    "server target {} (Rust target {})",
+                    server_target,
+                    server_target.rust_target()
+                ),
+                format!(
+                    "core {} {}: build Cargo package {} once -> {}",
+                    plan.distribution.name,
+                    plan.distribution.version,
+                    plan.distribution.package,
+                    plan.distribution.install_path
+                ),
+            ];
             lines.push(format!(
                 "Web Shell: npm ci && npm run build in {}",
                 plan.distribution.frontend.directory.display()
@@ -1227,7 +1318,7 @@ pub fn render_plan(checked: &CheckedConfig, format: OutputFormat) -> Result<Stri
     }
 }
 
-fn make_plan(checked: &CheckedConfig) -> Plan<'_> {
+fn make_plan(checked: &CheckedConfig, server_target: ServerTarget) -> Plan<'_> {
     Plan {
         distribution: PlanTarget {
             name: &checked.config.distribution.name,
@@ -1238,6 +1329,9 @@ fn make_plan(checked: &CheckedConfig) -> Plan<'_> {
             binary: &checked.config.distribution.binary,
             frontend: &checked.config.distribution.frontend,
             install_path: format!("bin/{}", checked.config.distribution.binary),
+            platform: server_target.platform(),
+            architecture: server_target.architecture(),
+            rust_target: server_target.rust_target(),
         },
         modules: checked
             .config
@@ -1266,9 +1360,7 @@ pub fn build(config_path: &Path, options: BuildOptions) -> Result<BuildResult> {
         options.cargo_profile == "release" || options.cargo_profile == "debug",
         "Cargo profile must be release or debug"
     );
-    if let Some(target) = &options.target {
-        validate_name("target", target)?;
-    }
+    let server_target = resolve_server_target(options.server_target)?;
     let checked = load_and_check(config_path)?;
     let final_output = options
         .output
@@ -1296,14 +1388,21 @@ pub fn build(config_path: &Path, options: BuildOptions) -> Result<BuildResult> {
         &checked.config.distribution.package,
         &checked.config.distribution.binary,
         &options,
+        server_target,
     )?;
     for module in &checked.config.modules {
         if let Some(frontend) = &module.frontend {
             npm_build(&module.source, frontend)
                 .with_context(|| format!("build module {} frontend", module.id))?;
         }
-        cargo_build(&module.source, &module.package, &module.binary, &options)
-            .with_context(|| format!("build module {} backend", module.id))?;
+        cargo_build(
+            &module.source,
+            &module.package,
+            &module.binary,
+            &options,
+            server_target,
+        )
+        .with_context(|| format!("build module {} backend", module.id))?;
     }
     if checked.config.require_clean_sources {
         check_source(
@@ -1336,14 +1435,13 @@ pub fn build(config_path: &Path, options: BuildOptions) -> Result<BuildResult> {
         &checked.config.distribution.source,
         &output.join("share/licenses/unionc"),
     )?;
-    let suffix = executable_suffix(options.target.as_deref());
     let core_artifact = artifact_path(
         &checked.config.distribution.source,
         &options,
         &checked.config.distribution.binary,
-        suffix,
+        server_target,
     );
-    let core_install = bin_dir.join(format!("{}{}", checked.config.distribution.binary, suffix));
+    let core_install = bin_dir.join(&checked.config.distribution.binary);
     copy_executable(&core_artifact, &core_install)?;
     let shell_source = checked
         .config
@@ -1377,7 +1475,7 @@ pub fn build(config_path: &Path, options: BuildOptions) -> Result<BuildResult> {
         }
         let mut manifest = package.manifest.clone();
         manifest.version_metadata.source_revision = Some(source.revision.clone());
-        let executable = stamp_target_executable(&mut manifest, suffix)?;
+        let executable = stamp_target_executable(&mut manifest)?;
         fs::write(
             destination.join("manifest.json"),
             format!("{}\n", serde_json::to_string_pretty(&manifest)?),
@@ -1389,7 +1487,7 @@ pub fn build(config_path: &Path, options: BuildOptions) -> Result<BuildResult> {
                 serde_json::to_string_pretty(&final_version_file(&manifest, &source.revision))?
             ),
         )?;
-        let artifact = artifact_path(&module.source, &options, &module.binary, suffix);
+        let artifact = artifact_path(&module.source, &options, &module.binary, server_target);
         let install = destination.join(&executable);
         copy_executable(&artifact, &install)?;
         copy_legal_files(
@@ -1412,6 +1510,8 @@ pub fn build(config_path: &Path, options: BuildOptions) -> Result<BuildResult> {
             name: &checked.config.distribution.name,
             version: &checked.config.distribution.version,
             revision: &checked.distribution_source.revision,
+            platform: server_target.platform(),
+            architecture: server_target.architecture(),
             executable: relative(&output, &core_install)?,
             web_shell: relative(&output, &shell_install)?,
         },
@@ -1439,13 +1539,14 @@ pub fn build(config_path: &Path, options: BuildOptions) -> Result<BuildResult> {
     let checksums_path = output.join("SHA256SUMS");
     scan_tree(&output)?;
     write_checksums(&output, &checksums_path)?;
-    verify_release(&output)?;
+    verify_release_for_target(&output, server_target)?;
     fs::rename(&output, &final_output)
         .with_context(|| format!("publish release as {}", final_output.display()))?;
     Ok(BuildResult {
         manifest: final_output.join("union-release.json"),
         checksums: final_output.join("SHA256SUMS"),
         output: final_output,
+        server_target,
     })
 }
 
@@ -1484,7 +1585,7 @@ pub fn verify_release(release: &Path) -> Result<VerificationResult> {
     let manifest: StoredReleaseManifest =
         serde_json::from_str(&read_text_bounded(&manifest_path, "release manifest")?)
             .with_context(|| format!("parse {}", manifest_path.display()))?;
-    validate_stored_manifest(release, &manifest)?;
+    let server_target = validate_stored_manifest(release, &manifest)?;
     let checksums_path = release.join("SHA256SUMS");
     let checksum_text = read_text_bounded(&checksums_path, "SHA256SUMS")?;
     let expected = parse_checksums(&checksum_text)?;
@@ -1511,10 +1612,29 @@ pub fn verify_release(release: &Path) -> Result<VerificationResult> {
         release: release.to_path_buf(),
         release_id,
         files: expected.len(),
+        server_target,
     })
 }
 
-fn validate_stored_manifest(release: &Path, manifest: &StoredReleaseManifest) -> Result<()> {
+/// Verify a release and require the architecture selected by its caller.
+pub fn verify_release_for_target(
+    release: &Path,
+    expected_target: ServerTarget,
+) -> Result<VerificationResult> {
+    let verified = verify_release(release)?;
+    ensure!(
+        verified.server_target == expected_target,
+        "release target is {}, expected {}",
+        verified.server_target,
+        expected_target
+    );
+    Ok(verified)
+}
+
+fn validate_stored_manifest(
+    release: &Path,
+    manifest: &StoredReleaseManifest,
+) -> Result<ServerTarget> {
     ensure!(
         manifest.schema_version == RELEASE_SCHEMA_VERSION,
         "unsupported release schema"
@@ -1522,6 +1642,10 @@ fn validate_stored_manifest(release: &Path, manifest: &StoredReleaseManifest) ->
     validate_name("release distribution name", &manifest.distribution.name)?;
     validate_version(&manifest.distribution.version)?;
     validate_revision(&manifest.distribution.revision)?;
+    let server_target = ServerTarget::from_release_fields(
+        &manifest.distribution.platform,
+        &manifest.distribution.architecture,
+    )?;
     validate_release_file(
         release,
         "Core executable",
@@ -1596,7 +1720,7 @@ fn validate_stored_manifest(release: &Path, manifest: &StoredReleaseManifest) ->
         order == manifest.activation_order,
         "invalid activation_order"
     );
-    Ok(())
+    Ok(server_target)
 }
 
 fn validate_built_package(
@@ -2169,7 +2293,13 @@ fn collect_files(directory: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-fn cargo_build(source: &Path, package: &str, binary: &str, options: &BuildOptions) -> Result<()> {
+fn cargo_build(
+    source: &Path,
+    package: &str,
+    binary: &str,
+    options: &BuildOptions,
+    server_target: ServerTarget,
+) -> Result<()> {
     let mut command = Command::new("cargo");
     command
         .arg("build")
@@ -2186,9 +2316,7 @@ fn cargo_build(source: &Path, package: &str, binary: &str, options: &BuildOption
     if options.cargo_profile == "release" {
         command.arg("--release");
     }
-    if let Some(target) = &options.target {
-        command.args(["--target", target]);
-    }
+    command.args(["--target", server_target.rust_target()]);
     command.stdout(Stdio::inherit()).stderr(Stdio::inherit());
     let debug = format!("{command:?}");
     let status = command.status().with_context(|| format!("run {debug}"))?;
@@ -2196,34 +2324,28 @@ fn cargo_build(source: &Path, package: &str, binary: &str, options: &BuildOption
     Ok(())
 }
 
-fn artifact_path(source: &Path, options: &BuildOptions, binary: &str, suffix: &str) -> PathBuf {
+fn artifact_path(
+    source: &Path,
+    options: &BuildOptions,
+    binary: &str,
+    server_target: ServerTarget,
+) -> PathBuf {
     let mut path = source.join("target");
-    if let Some(target) = &options.target {
-        path.push(target);
-    }
+    path.push(server_target.rust_target());
     path.push(&options.cargo_profile);
-    path.push(format!("{binary}{suffix}"));
+    path.push(binary);
     path
 }
 
-fn executable_suffix(target: Option<&str>) -> &'static str {
-    match target {
-        Some(target) if target.contains("-windows-") => ".exe",
-        Some(_) => "",
-        None => std::env::consts::EXE_SUFFIX,
-    }
-}
-
-fn stamp_target_executable(manifest: &mut PluginManifest, suffix: &str) -> Result<String> {
+fn stamp_target_executable(manifest: &mut PluginManifest) -> Result<String> {
     let Execution::Process { executable, .. } = &mut manifest.execution else {
         anyhow::bail!("release module {} is not a process", manifest.id);
     };
     ensure!(
         !executable.to_ascii_lowercase().ends_with(".exe"),
-        "module {} source executable must omit the target-specific .exe suffix",
+        "module {} source executable must omit the Windows .exe suffix",
         manifest.id
     );
-    executable.push_str(suffix);
     process_executable(manifest).map(str::to_owned)
 }
 
@@ -2418,6 +2540,36 @@ output = "dist"
                 .any(|line| line.trim_start().starts_with("ref:") && line.contains("v2.0.0")),
             "reusable workflow must not check out Builder through a movable release tag"
         );
+    }
+
+    #[test]
+    fn server_distribution_workflows_are_native_linux_and_target_qualified() {
+        let reusable = include_str!("../.github/workflows/build-union.yml");
+        for required in [
+            "server-target:",
+            "linux-amd64",
+            "linux-arm64",
+            "ubuntu-24.04-arm",
+            "ubuntu-24.04",
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "artifact-name-prefix",
+            "artifact_name=$ARTIFACT_NAME_PREFIX-$SERVER_TARGET",
+            "archive_name=union-distribution-$SERVER_TARGET.tar",
+            "--server-target \"${{ steps.server_target.outputs.server_target }}\"",
+        ] {
+            assert!(
+                reusable.contains(required),
+                "missing workflow policy: {required}"
+            );
+        }
+        assert!(!reusable.contains("windows-"));
+        assert!(!reusable.contains("macos-"));
+
+        let release = include_str!("../.github/workflows/release.yml");
+        assert!(release.contains("validate-full-bundled-distribution:"));
+        assert!(release.contains("server-target: ${{ matrix.server_target }}"));
+        assert!(release.contains("artifact-name-prefix: union-full-validation"));
     }
 
     #[test]
@@ -2711,18 +2863,29 @@ output = "dist"
     }
 
     #[test]
-    fn executable_suffix_follows_target() {
-        assert_eq!(executable_suffix(Some("x86_64-pc-windows-msvc")), ".exe");
-        assert_eq!(executable_suffix(Some("x86_64-unknown-linux-musl")), "");
-
+    fn server_targets_are_linux_only_and_keep_platform_neutral_executables() {
+        assert_eq!(ServerTarget::LinuxAmd64.platform(), "linux");
+        assert_eq!(ServerTarget::LinuxAmd64.architecture(), "amd64");
+        assert_eq!(
+            ServerTarget::LinuxAmd64.rust_target(),
+            "x86_64-unknown-linux-gnu"
+        );
+        assert_eq!(ServerTarget::LinuxArm64.platform(), "linux");
+        assert_eq!(ServerTarget::LinuxArm64.architecture(), "arm64");
+        assert_eq!(
+            ServerTarget::LinuxArm64.rust_target(),
+            "aarch64-unknown-linux-gnu"
+        );
+        assert!(ServerTarget::from_release_fields("windows", "amd64").is_err());
+        assert!(ServerTarget::from_release_fields("linux", "x86_64").is_err());
         let mut manifest = PluginManifest::parse_json(&sample_manifest().to_string()).unwrap();
         assert_eq!(
-            stamp_target_executable(&mut manifest, ".exe").unwrap(),
-            "backend/photo-backup.exe"
+            stamp_target_executable(&mut manifest).unwrap(),
+            "backend/photo-backup"
         );
         assert_eq!(
             process_executable(&manifest).unwrap(),
-            "backend/photo-backup.exe"
+            "backend/photo-backup"
         );
     }
 
@@ -2976,7 +3139,10 @@ output = "dist"
         let temporary = tempfile::tempdir().unwrap();
         let release = temporary.path().join("release");
         make_fake_release(&release, "0.5.0", "first");
-        assert_eq!(verify_release(&release).unwrap().files, 3);
+        let verified = verify_release(&release).unwrap();
+        assert_eq!(verified.files, 3);
+        assert_eq!(verified.server_target, ServerTarget::LinuxAmd64);
+        assert!(verify_release_for_target(&release, ServerTarget::LinuxArm64).is_err());
         fs::remove_file(release.join("share/union/web/index.html")).unwrap();
         write_checksums(&release, &release.join("SHA256SUMS")).unwrap();
         assert!(
@@ -2998,6 +3164,29 @@ output = "dist"
         fs::remove_file(release.join("unexpected")).unwrap();
         fs::write(release.join("bin/unionc"), "changed").unwrap();
         assert!(verify_release(&release).is_err());
+    }
+
+    #[test]
+    fn verification_rejects_non_linux_server_distribution_metadata() {
+        let temporary = tempfile::tempdir().unwrap();
+        let release = temporary.path().join("release");
+        make_fake_release(&release, "0.5.0", "first");
+        let manifest_path = release.join("union-release.json");
+        let mut manifest: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&manifest_path).unwrap()).unwrap();
+        manifest["distribution"]["platform"] = "windows".into();
+        fs::write(
+            &manifest_path,
+            format!("{}\n", serde_json::to_string_pretty(&manifest).unwrap()),
+        )
+        .unwrap();
+        write_checksums(&release, &release.join("SHA256SUMS")).unwrap();
+        assert!(
+            verify_release(&release)
+                .unwrap_err()
+                .to_string()
+                .contains("supported targets are linux/amd64 and linux/arm64")
+        );
     }
 
     #[cfg(unix)]
@@ -3035,7 +3224,9 @@ output = "dist"
                     "schema_version": 2,
                     "distribution": {
                         "name": "unionc", "version": version,
-                        "revision": "a".repeat(40), "executable": "bin/unionc",
+                        "revision": "a".repeat(40),
+                        "platform": "linux", "architecture": "amd64",
+                        "executable": "bin/unionc",
                         "web_shell": "share/union/web"
                     },
                     "modules": [], "activation_order": []

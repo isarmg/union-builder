@@ -4,6 +4,11 @@ Builder configuration is strict TOML (`deny_unknown_fields`). `schema_version = 
 v1 fields such as `base_features`, `union_feature`, module runtime addresses and frontend install paths
 are rejected.
 
+The composition file is intentionally architecture-neutral. A build/check/plan invocation selects exactly
+one `--server-target linux-amd64|linux-arm64`; omitting it is allowed only when Builder can infer one of
+those targets from a Linux x86_64/aarch64 host. The corresponding Rust triples are
+`x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`. No Windows or Apple server target exists.
+
 ```toml
 schema_version = 2
 require_clean_sources = true
@@ -45,7 +50,7 @@ Field ownership:
 | `distribution` | Pin and build Core/Web Shell once | Business feature set, runtime module state |
 | `[[module]]` | Select a complete module source package and exact module-auth route exceptions | Listen/Gateway/health/permission contract |
 | module `manifest.json` | Runtime contract and all module contributions | Source revision or runtime enabled state |
-| `union-release.json` | Exact included packages and dependency activation order | Database state or enable/disable state |
+| `union-release.json` | Exact included packages, Linux platform/architecture and dependency activation order | Database state or enable/disable state |
 
 Every revision is a non-zero canonical lowercase 40-character Git object ID. If a custom composition
 intentionally references modules from the official Union repository, schema validation requires those
@@ -56,9 +61,24 @@ and revisions.
 The module `binary` names the Cargo artifact. Its install base name is taken from the validated source
 Manifest `execution.executable`; this deliberately supports renaming, for example
 `union-host-monitoring-worker` to `modules/host-monitoring/backend/host-monitoring`. Source Manifests
-use this platform-neutral name, while Builder appends the target-specific `.exe` suffix to both the
-packaged path and final Manifest on Windows. Process arguments such as Host Monitoring's `serve` remain
+use this platform-neutral Linux executable name. Process arguments such as Host Monitoring's `serve` remain
 in Manifest `execution.args` and are consumed by Runtime, not duplicated in Builder config.
+
+The generated strict schema-v2 `union-release.json` records these required distribution fields:
+
+```json
+{
+  "distribution": {
+    "platform": "linux",
+    "architecture": "amd64"
+  }
+}
+```
+
+`architecture` is exactly `amd64` or `arm64`. Builder `verify` rejects a missing field, another spelling
+such as `x86_64`, mismatched expected `--server-target`, or every non-Linux combination. The Rust triple is
+an auditable build input and appears in `plan`; the release contract uses stable platform vocabulary rather
+than exposing compiler-specific naming.
 
 `module_auth_routes` defaults to an empty list. The listed values are exact Manifest backend route
 IDs, not URL patterns: their set must equal the routes whose `auth` is `module`, and duplicate,
@@ -99,3 +119,10 @@ as the Builder checkout ref and must be the same full commit ID used in the call
 The workflow compares that input with both GitHub's called-job `workflow_ref` and resolved `workflow_sha`
 before checkout, so a branch, tag, different commit or merely SHA-shaped unrelated input is rejected. Builder
 self-runs and manual dispatches use their own `github.sha`.
+
+The reusable workflow additionally requires `server-target`. It runs `linux-amd64` on `ubuntu-24.04` and
+`linux-arm64` on `ubuntu-24.04-arm`, proves `uname -m` before compilation, and passes the target explicitly to
+both `build` and `verify`. `artifact-name-prefix = "union-full"` yields the collision-free artifact
+`union-full-linux-amd64` or `union-full-linux-arm64`; each contains a correspondingly named tar while the tar
+root remains `union-distribution/`. Workflow outputs expose the logical target, Rust triple, artifact name and
+archive name to callers.

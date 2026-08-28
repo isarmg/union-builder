@@ -27,5 +27,13 @@ jobs:
         run: |
           set -euo pipefail
           for profile in minimal storage monitoring full; do
-            cargo run --locked -- check --config "profiles/$profile.toml"
+            for server_target in linux-amd64 linux-arm64; do
+              cargo run --locked -- check \
+                --config "profiles/$profile.toml" \
+                --server-target "$server_target"
+              cargo run --locked -- plan \
+                --config "profiles/$profile.toml" \
+                --server-target "$server_target" \
+                --format json >/dev/null
+            done
           done
