@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  HOST_M_AGENT_REVISION: bb301742e8f6c7c181b17b0191e62b99bf42ebdb
+  HOST_M_AGENT_REVISION: 25815b16e8d1e5c46758bed99ea03045011d3520
   HOST_M_AGENT_VERSION: 0.5.0
   PHOTO_CLIENT_REVISION: 41c67959ff901cdc6c5caac3e678ea8430f0ec7c
   PHOTO_CLIENT_VERSION: 0.2.0
@@ -146,7 +146,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$HOST_M_AGENT_REVISION"
-          cargo pkgid --locked -p host-m-agent | grep -F "#host-m-agent@$HOST_M_AGENT_VERSION"
+          cargo pkgid --locked -p host-m-agent | grep -F "#$HOST_M_AGENT_VERSION"
       - name: Build native Linux Agent
         run: cargo build --locked --release -p host-m-agent --bin host-m-agent
       - name: Install pinned nFPM and build deb/rpm
@@ -226,7 +226,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$HOST_M_AGENT_REVISION"
-          cargo pkgid --locked -p host-m-agent | grep -F "#host-m-agent@$HOST_M_AGENT_VERSION"
+          cargo pkgid --locked -p host-m-agent | grep -F "#$HOST_M_AGENT_VERSION"
           cargo check --locked -p host-m-agent --target aarch64-apple-ios \
             --lib --no-default-features
           cargo check --locked -p host-m-agent --target aarch64-apple-ios-sim \

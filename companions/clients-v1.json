@@ -7,7 +7,7 @@
       "kind": "agent",
       "version": "0.5.0",
       "repository": "https://github.com/isarmg/host-monitoring.git",
-      "revision": "bb301742e8f6c7c181b17b0191e62b99bf42ebdb",
+      "revision": "25815b16e8d1e5c46758bed99ea03045011d3520",
       "assets": [
         { "platform": "linux", "architecture": "amd64", "delivery": "unsigned-deb-rpm" },
         { "platform": "linux", "architecture": "arm64", "delivery": "unsigned-deb-rpm" },
