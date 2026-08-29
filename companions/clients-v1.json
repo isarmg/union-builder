@@ -3,11 +3,11 @@
   "release_owner": "union-builder",
   "clients": [
     {
-      "id": "host-monitoring-agent",
+      "id": "host-m-agent",
       "kind": "agent",
       "version": "0.5.0",
       "repository": "https://github.com/isarmg/host-monitoring.git",
-      "revision": "d80053fcd7edc924b2890784f50be3864e7e1585",
+      "revision": "bb301742e8f6c7c181b17b0191e62b99bf42ebdb",
       "assets": [
         { "platform": "linux", "architecture": "amd64", "delivery": "unsigned-deb-rpm" },
         { "platform": "linux", "architecture": "arm64", "delivery": "unsigned-deb-rpm" },

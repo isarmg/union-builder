@@ -171,7 +171,7 @@ Builder Release 是 Union 模块 Agent/客户端的唯一官方发布面。模�
 可复用构建边界，但不单独创建 GitHub Release。Builder 通过完整的不可变 revision 拉取它们，
 验证版本并产生到同一 Builder Release：
 
-- Host Monitoring Agent：Linux amd64/arm64 DEB/RPM、Windows amd64 MSI、macOS arm64 PKG；
+- `host-m-agent`：Linux amd64/arm64 DEB/RPM、Windows amd64 MSI、macOS arm64 PKG；
   Android/iOS/iPadOS 发布的是可嵌入 Rust 源码 SDK，因为当前没有完整原生应用壳。
 - Photo Backup Client：使用项目长期证书签名的 Android arm64 release APK，以及同时面向 iPhone 和 iPad 的
   未签名 device `.app` 归档。

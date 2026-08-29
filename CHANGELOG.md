@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Rename the centrally built Host Monitoring companion and every desktop/mobile release asset to
+  `host-m-agent`, while keeping the module's `/agent/v1` and `/agent/v2` wire routes unchanged.
+- Advance all profiles to the restored Union Web Shell, and pin `full`/`monitoring` to the renamed
+  Host source plus the restored Sunshine and Host module frontends.
+
 ## 2.1.1 - 2026-08-28
 
 - Sign the centrally published Photo Backup Android APK with the long-lived project release

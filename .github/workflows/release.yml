@@ -9,8 +9,8 @@ permissions:
   contents: read
 
 env:
-  HOST_AGENT_REVISION: d80053fcd7edc924b2890784f50be3864e7e1585
-  HOST_AGENT_VERSION: 0.5.0
+  HOST_M_AGENT_REVISION: bb301742e8f6c7c181b17b0191e62b99bf42ebdb
+  HOST_M_AGENT_VERSION: 0.5.0
   PHOTO_CLIENT_REVISION: 41c67959ff901cdc6c5caac3e678ea8430f0ec7c
   PHOTO_CLIENT_VERSION: 0.2.0
   PHOTO_ANDROID_CERT_SHA256: c952cb2769cfd2e137d75c3890ce21190babb004f95b15ac248fa774131f4bfa
@@ -121,7 +121,7 @@ jobs:
           path: dist/${{ matrix.asset }}
           if-no-files-found: error
 
-  build-host-agent-linux:
+  build-host-m-agent-linux:
     needs: verify
     strategy:
       fail-fast: false
@@ -136,19 +136,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: isarmg/host-monitoring
-          ref: ${{ env.HOST_AGENT_REVISION }}
+          ref: ${{ env.HOST_M_AGENT_REVISION }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
         with:
           toolchain: 1.98.0
-      - name: Verify immutable Host Agent source and version
+      - name: Verify immutable host-m-agent source and version
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$HOST_AGENT_REVISION"
-          cargo pkgid --locked -p unionc-agent | grep -F "#unionc-agent@$HOST_AGENT_VERSION"
+          test "$(git rev-parse HEAD)" = "$HOST_M_AGENT_REVISION"
+          cargo pkgid --locked -p host-m-agent | grep -F "#host-m-agent@$HOST_M_AGENT_VERSION"
       - name: Build native Linux Agent
-        run: cargo build --locked --release -p unionc-agent --bin unionc-agent
+        run: cargo build --locked --release -p host-m-agent --bin host-m-agent
       - name: Install pinned nFPM and build deb/rpm
         shell: bash
         env:
@@ -157,22 +157,22 @@ jobs:
           set -euo pipefail
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
           NFPM_BIN="$(go env GOPATH)/bin/nfpm" \
-            sh agent/packaging/linux/build-packages.sh
+            sh host-m-agent/packaging/linux/build-packages.sh
           test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 2
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: unionc-agent-linux-${{ matrix.architecture }}
+          name: host-m-agent-linux-${{ matrix.architecture }}
           path: dist/*
           if-no-files-found: error
 
-  build-host-agent-windows:
+  build-host-m-agent-windows:
     needs: verify
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: isarmg/host-monitoring
-          ref: ${{ env.HOST_AGENT_REVISION }}
+          ref: ${{ env.HOST_M_AGENT_REVISION }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
         with:
@@ -182,40 +182,40 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          if ((git rev-parse HEAD) -ne $env:HOST_AGENT_REVISION) { throw "Host source mismatch" }
+          if ((git rev-parse HEAD) -ne $env:HOST_M_AGENT_REVISION) { throw "Host source mismatch" }
           $metadata = cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
-          $agent = @($metadata.packages | Where-Object name -eq "unionc-agent")
-          if ($agent.Count -ne 1 -or $agent[0].version -ne $env:HOST_AGENT_VERSION) {
-            throw "Host Agent version mismatch"
+          $agent = @($metadata.packages | Where-Object name -eq "host-m-agent")
+          if ($agent.Count -ne 1 -or $agent[0].version -ne $env:HOST_M_AGENT_VERSION) {
+            throw "host-m-agent version mismatch"
           }
-          cargo build --locked --release -p unionc-agent --target x86_64-pc-windows-msvc `
-            --bin unionc-agent --bin unionc-agent-maintenance --bin unionc-agent-tray
+          cargo build --locked --release -p host-m-agent --target x86_64-pc-windows-msvc `
+            --bin host-m-agent --bin host-m-agent-maintenance --bin host-m-agent-tray
           if ($LASTEXITCODE -ne 0) { throw "Agent build failed" }
-          cmd /c agent\packaging\windows\wix\build-msi.cmd `
-            $env:HOST_AGENT_VERSION `
-            target\x86_64-pc-windows-msvc\release\unionc-agent.exe `
-            target\x86_64-pc-windows-msvc\release\unionc-agent-maintenance.exe `
-            target\x86_64-pc-windows-msvc\release\unionc-agent-tray.exe
+          cmd /c host-m-agent\packaging\windows\wix\build-msi.cmd `
+            $env:HOST_M_AGENT_VERSION `
+            target\x86_64-pc-windows-msvc\release\host-m-agent.exe `
+            target\x86_64-pc-windows-msvc\release\host-m-agent-maintenance.exe `
+            target\x86_64-pc-windows-msvc\release\host-m-agent-tray.exe
           if ($LASTEXITCODE -ne 0) { throw "MSI build failed" }
-          $packages = @(Get-ChildItem agent\packaging\windows\wix\bin\x64\Release -File -Filter *.msi)
+          $packages = @(Get-ChildItem host-m-agent\packaging\windows\wix\bin\x64\Release -File -Filter *.msi)
           if ($packages.Count -ne 1) { throw "Expected exactly one MSI, found $($packages.Count)" }
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item $packages[0].FullName `
-            "dist/unionc-agent-$env:HOST_AGENT_VERSION-windows-amd64-unsigned.msi"
+            "dist/host-m-agent-$env:HOST_M_AGENT_VERSION-windows-amd64-unsigned.msi"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: unionc-agent-windows-amd64
+          name: host-m-agent-windows-amd64
           path: dist/*
           if-no-files-found: error
 
-  build-host-agent-macos-and-apple-mobile:
+  build-host-m-agent-macos-and-apple-mobile:
     needs: verify
     runs-on: macos-26
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: isarmg/host-monitoring
-          ref: ${{ env.HOST_AGENT_REVISION }}
+          ref: ${{ env.HOST_M_AGENT_REVISION }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
         with:
@@ -225,37 +225,37 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$HOST_AGENT_REVISION"
-          cargo pkgid --locked -p unionc-agent | grep -F "#unionc-agent@$HOST_AGENT_VERSION"
-          cargo check --locked -p unionc-agent --target aarch64-apple-ios \
+          test "$(git rev-parse HEAD)" = "$HOST_M_AGENT_REVISION"
+          cargo pkgid --locked -p host-m-agent | grep -F "#host-m-agent@$HOST_M_AGENT_VERSION"
+          cargo check --locked -p host-m-agent --target aarch64-apple-ios \
             --lib --no-default-features
-          cargo check --locked -p unionc-agent --target aarch64-apple-ios-sim \
+          cargo check --locked -p host-m-agent --target aarch64-apple-ios-sim \
             --lib --no-default-features
-      - name: Build native macOS Agent and unsigned installer
+      - name: Build native macOS host-m-agent and unsigned installer
         shell: bash
         run: |
           set -euo pipefail
-          cargo build --locked --release -p unionc-agent --target aarch64-apple-darwin \
-            --bin unionc-agent
+          cargo build --locked --release -p host-m-agent --target aarch64-apple-darwin \
+            --bin host-m-agent
           mkdir -p dist
-          BINARY="$PWD/target/aarch64-apple-darwin/release/unionc-agent" \
-            VERSION="$HOST_AGENT_VERSION" \
-            OUTPUT="$PWD/dist/unionc-agent-$HOST_AGENT_VERSION-macos-arm64-unsigned.pkg" \
-            sh agent/packaging/macos/build-pkg.sh
+          BINARY="$PWD/target/aarch64-apple-darwin/release/host-m-agent" \
+            VERSION="$HOST_M_AGENT_VERSION" \
+            OUTPUT="$PWD/dist/host-m-agent-$HOST_M_AGENT_VERSION-macos-arm64-unsigned.pkg" \
+            sh host-m-agent/packaging/macos/build-pkg.sh
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: unionc-agent-macos-arm64
+          name: host-m-agent-macos-arm64
           path: dist/*
           if-no-files-found: error
 
-  build-host-agent-mobile-sdk:
+  build-host-m-agent-mobile-sdk:
     needs: verify
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: isarmg/host-monitoring
-          ref: ${{ env.HOST_AGENT_REVISION }}
+          ref: ${{ env.HOST_M_AGENT_REVISION }}
           fetch-depth: 0
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
@@ -266,18 +266,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$HOST_AGENT_REVISION"
-          cargo check --locked -p unionc-agent --target aarch64-linux-android \
+          test "$(git rev-parse HEAD)" = "$HOST_M_AGENT_REVISION"
+          cargo check --locked -p host-m-agent --target aarch64-linux-android \
             --lib --no-default-features
-          root="unionc-agent-mobile-sdk-$HOST_AGENT_VERSION"
+          root="host-m-agent-mobile-sdk-$HOST_M_AGENT_VERSION"
           mkdir -p "stage/$root" dist
           git archive --format=tar HEAD \
-            Cargo.toml Cargo.lock LICENSE-APACHE NOTICE agent protocol \
+            Cargo.toml Cargo.lock LICENSE-APACHE NOTICE host-m-agent protocol \
             | tar -xf - -C "stage/$root"
           jq -n \
-            --arg version "$HOST_AGENT_VERSION" \
-            --arg revision "$HOST_AGENT_REVISION" \
-            '{schema_version:1,id:"host-monitoring-agent-mobile-sdk",version:$version,source_revision:$revision,delivery:"embedded-rust-source-sdk",targets:["aarch64-linux-android","aarch64-apple-ios","aarch64-apple-ios-sim"],limitations:["no Android/iOS application shell","no APK or IPA","native host owns permissions, credentials, HTTPS, scheduling and background lifecycle"]}' \
+            --arg version "$HOST_M_AGENT_VERSION" \
+            --arg revision "$HOST_M_AGENT_REVISION" \
+            '{schema_version:1,id:"host-m-agent-mobile-sdk",version:$version,source_revision:$revision,delivery:"embedded-rust-source-sdk",targets:["aarch64-linux-android","aarch64-apple-ios","aarch64-apple-ios-sim"],limitations:["no Android/iOS application shell","no APK or IPA","native host owns permissions, credentials, HTTPS, scheduling and background lifecycle"]}' \
             > "stage/$root/SOURCE.json"
           source_date_epoch="$(git show -s --format=%ct HEAD)"
           tar --sort=name --mtime="@$source_date_epoch" --owner=0 --group=0 --numeric-owner \
@@ -285,7 +285,7 @@ jobs:
           tar -tzf "dist/$root.tar.gz" | grep -Fx "$root/SOURCE.json"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: unionc-agent-mobile-sdk
+          name: host-m-agent-mobile-sdk
           path: dist/*
           if-no-files-found: error
 
@@ -421,10 +421,10 @@ jobs:
   validate-release-assets:
     needs:
       - build
-      - build-host-agent-linux
-      - build-host-agent-windows
-      - build-host-agent-macos-and-apple-mobile
-      - build-host-agent-mobile-sdk
+      - build-host-m-agent-linux
+      - build-host-m-agent-windows
+      - build-host-m-agent-macos-and-apple-mobile
+      - build-host-m-agent-mobile-sdk
       - build-photo-android-client
       - build-photo-apple-client
     runs-on: ubuntu-24.04
@@ -439,7 +439,7 @@ jobs:
           merge-multiple: true
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: unionc-agent-*
+          pattern: host-m-agent-*
           path: release-assets
           merge-multiple: true
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -461,13 +461,13 @@ jobs:
             union-builder-linux-x86_64 \
             union-builder-macos-aarch64 \
             union-builder-windows-x86_64.exe \
-            unionc-agent-0.5.0-macos-arm64-unsigned.pkg \
-            unionc-agent-0.5.0-windows-amd64-unsigned.msi \
-            unionc-agent-0.5.0.aarch64.rpm \
-            unionc-agent-0.5.0.x86_64.rpm \
-            unionc-agent_0.5.0_amd64.deb \
-            unionc-agent_0.5.0_arm64.deb \
-            unionc-agent-mobile-sdk-0.5.0.tar.gz \
+            host-m-agent-0.5.0-macos-arm64-unsigned.pkg \
+            host-m-agent-0.5.0-windows-amd64-unsigned.msi \
+            host-m-agent-0.5.0.aarch64.rpm \
+            host-m-agent-0.5.0.x86_64.rpm \
+            host-m-agent_0.5.0_amd64.deb \
+            host-m-agent_0.5.0_arm64.deb \
+            host-m-agent-mobile-sdk-0.5.0.tar.gz \
             | LC_ALL=C sort > "$RUNNER_TEMP/expected-assets"
           cmp "$RUNNER_TEMP/expected-assets" "$RUNNER_TEMP/actual-assets"
           find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\0' \
@@ -503,4 +503,4 @@ jobs:
           sha256sum --check SHA256SUMS
           gh release create "$GITHUB_REF_NAME" ./* \
             --verify-tag --generate-notes --title "Union Builder ${GITHUB_REF_NAME#v}" \
-            --notes "Builder CLI and centrally published companion assets. The Photo Android APK is signed with the pinned project certificate; desktop Agent packages and the Apple app archive remain unsigned. The Host mobile asset is an embedded Rust source SDK, not an APK/IPA. Android signing makes the APK installable but does not establish Play Store readiness, platform notarization, or device compatibility certification."
+            --notes "Builder CLI and centrally published companion assets. The Photo Android APK is signed with the pinned project certificate; desktop host-m-agent packages and the Apple app archive remain unsigned. The Host mobile asset is an embedded Rust source SDK, not an APK/IPA. Android signing makes the APK installable but does not establish Play Store readiness, platform notarization, or device compatibility certification."

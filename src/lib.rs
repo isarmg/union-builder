@@ -2593,20 +2593,20 @@ output = "dist"
         assert_eq!(companion["release_owner"], "union-builder");
         let clients = companion["clients"].as_array().unwrap();
         assert_eq!(clients.len(), 2);
-        assert_eq!(clients[0]["id"], "host-monitoring-agent");
+        assert_eq!(clients[0]["id"], "host-m-agent");
         assert_eq!(clients[1]["id"], "photo-backup-client");
 
         for required in [
-            "build-host-agent-linux:",
-            "build-host-agent-windows:",
-            "build-host-agent-macos-and-apple-mobile:",
-            "build-host-agent-mobile-sdk:",
+            "build-host-m-agent-linux:",
+            "build-host-m-agent-windows:",
+            "build-host-m-agent-macos-and-apple-mobile:",
+            "build-host-m-agent-mobile-sdk:",
             "build-photo-android-client:",
             "build-photo-apple-client:",
             "validate-release-assets:",
             "photo-backup-0.2.0-android-arm64-signed.apk",
             "photo-backup-0.2.0-ios-ipados-arm64-unsigned-app.tar.gz",
-            "unionc-agent-mobile-sdk-0.5.0.tar.gz",
+            "host-m-agent-mobile-sdk-0.5.0.tar.gz",
             "COMPANION-ASSETS.json",
             "sha256sum --check SHA256SUMS",
             "name: union-builder-release-assets",
@@ -2620,12 +2620,11 @@ output = "dist"
         assert!(release.contains("repository: isarmg/photo-backup"));
         assert!(release.contains("ref: ${{ env.PHOTO_CLIENT_REVISION }}"));
         assert!(release.contains(
-            "Get-ChildItem agent\\packaging\\windows\\wix\\bin\\x64\\Release -File -Filter *.msi"
+            "Get-ChildItem host-m-agent\\packaging\\windows\\wix\\bin\\x64\\Release -File -Filter *.msi"
         ));
-        assert!(
-            !release
-                .contains("Get-ChildItem agent\\packaging\\windows\\wix -Recurse -Filter *.msi")
-        );
+        assert!(!release.contains(
+            "Get-ChildItem host-m-agent\\packaging\\windows\\wix -Recurse -Filter *.msi"
+        ));
         assert!(release.contains("assembleRelease"));
         assert!(release.contains("PHOTO_ANDROID_KEYSTORE_BASE64"));
         assert!(release.contains("apksigner\" sign"));
